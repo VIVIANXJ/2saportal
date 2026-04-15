@@ -85,13 +85,12 @@ async function fetchJdl(skuList) {
   const body = { pageNum: 1, pageSize: 50 };
   if (skuList?.length) body.customerGoodsIdList = skuList;
 
-  // 参与签名的参数：URL params + body params，但不含 LOP-DN
+  // 签名只包含 URL 参数，body 参数不参与签名
   const signParams = {
     app_key:      APP_KEY,
     access_token: ACCESS_TOKEN,
     timestamp,
     v:            '2.0',
-    ...body,
   };
 
   const content = APP_SECRET
@@ -106,7 +105,7 @@ async function fetchJdl(skuList) {
   url.searchParams.set('timestamp',    timestamp);
   url.searchParams.set('v',            '2.0');
   url.searchParams.set('sign',         sign);
-  url.searchParams.set('LOP-DN',       'JD_FOP_FULFILLMENT_CENTE');
+  url.searchParams.set('LOP-DN',       'FOP');
 
   try {
     const res = await fetch(url.toString(), {
