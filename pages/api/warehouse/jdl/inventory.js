@@ -125,13 +125,14 @@ export default async function handler(req, res) {
 
     // Build request body using correct SDK field names
     const bodyObj = {
-      page:     parseInt(page),
-      pageSize: parseInt(pageSize),
+      page:         parseInt(page),
+      pageSize:     parseInt(pageSize),
+      customerCode: process.env.JDL_CUSTOMER_CODE || 'KH20000015945',
     };
 
     if (sku) {
       const skuList = sku.split(',').map(s => s.trim()).filter(Boolean);
-      bodyObj.customerGoodsIdList = skuList;  // correct field per SDK
+      bodyObj.customerGoodsIdList = skuList;
     }
 
     // SDK: getAppJsonParams/getBodyObject 는 ReqDto 를 List 에 넣어 직렬화
