@@ -484,9 +484,38 @@ export default function Portal() {
           );
         })()}
         {/* Inventory table */}
-        {tab === 'inventory' && searched && !loading && (
+        {tab === 'inventory' && searched && !loading && (() => {
+          // 过滤逻辑
+          const qSku = invSearch.trim().toLowerCase();
+          const filteredInv = inventory.filter(item =>
+            !qSku || (item.sku || '').toLowerCase().includes(qSku)
+          );
+
+          // 展开成扁平行（每仓库一行）
+          const rows = [];
+          filteredInv.forEach(item => {
+            const entries = item.warehouses
+              ? Object.entries(item.warehouses)
+              : [[item.warehouse_code || item.warehouse || '—', item]];
+            entries.forEach(([whName, wh]) => {
+              if (invFilter !== 'all' && whName !== invFilter) return;
+              if (hideZero && !(wh.sellable || wh.reserved || wh.onway)) return;
+              rows.push({
+                sku:     item.sku,
+                wh:      whName,
+                s:       wh.sellable  || 0,
+                r:       wh.reserved  || 0,
+                o:       wh.onway     || 0,
+                t:       (wh.sellable || 0) + (wh.reserved || 0),
+              });
+            });
+          });
+
+          const pagedRows = rows.slice((invPage-1)*PAGE_SIZE, invPage*PAGE_SIZE);
+
+          return (
           <div style={{ animation: 'fadeIn 0.2s ease' }}>
-            {inventory.length === 0 ? (
+            {rows.length === 0 ? (
               <div style={{
                 textAlign: 'center', color: C.muted, padding: '64px 0',
                 background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`,
@@ -497,7 +526,7 @@ export default function Portal() {
             ) : (
               <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div style={{ padding: '12px 20px', borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted, fontWeight: 500 }}>
-                  {inventory.length} SKU{inventory.length !== 1 ? 's' : ''} · showing {rows ? rows.length : 0} rows · Page {invPage}/{Math.max(1,Math.ceil((rows ? rows.length : inventory.length)/PAGE_SIZE))}
+                  {rows.length} row{rows.length !== 1 ? 's' : ''}
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -512,88 +541,37 @@ export default function Portal() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(() => {
-                      // 筛选逻辑
-                      const qSku = invSearch.trim().toLowerCase();
-                      const filteredInv = inventory.filter(item => {
-                        if (qSku && !(item.sku || '').toLowerCase().includes(qSku)) return false;
-                        return true;
-                      });
-
-                      // 把合并数据展开成扁平行：每个仓库一行
-                      const rows = [];
-                      filteredInv.forEach(item => {
-                        if (item.warehouses) {
-                          Object.entries(item.warehouses).forEach(([whName, wh]) => {
-                            // 仓库筛选
-                            if (invFilter !== 'all' && whName !== invFilter) return;
-                            // 零库存筛选
-                            if (hideZero && (wh.sellable || 0) === 0 && (wh.reserved || 0) === 0 && (wh.onway || 0) === 0) return;
-                            rows.push({
-                              sku:     item.sku,
-                              wh:      whName,
-                              wh_code: whName,
-                              s:       wh.sellable  || 0,
-                              r:       wh.reserved  || 0,
-                              o:       wh.onway      || 0,
-                              t:       (wh.sellable || 0) + (wh.reserved || 0),
-                            });
-                          });
-                        } else {
-                          const whName = item.warehouse_code || item.warehouse || '—';
-                          if (invFilter !== 'all' && whName !== invFilter) return;
-                          if (hideZero && (item.sellable || 0) === 0 && (item.reserved || 0) === 0 && (item.onway || 0) === 0) return;
-                          rows.push({
-                            sku:     item.sku,
-                            wh:      whName,
-                            wh_code: item.warehouse,
-                            s:       item.sellable  || 0,
-                            r:       item.reserved  || 0,
-                            o:       item.onway      || 0,
-                            t:       (item.sellable || 0) + (item.reserved || 0),
-                          });
-                        }
-                      });
-
-                      // 按 SKU 分组显示，同 SKU 多行合并第一列
-                      let lastSku = null;
-                      // 更新 invPage 如果超出范围
-                      const totalInvPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-                      if (invPage > totalInvPages) { /* will auto-correct via pagination */ }
-                      const pagedRows = rows.slice((invPage-1)*PAGE_SIZE, invPage*PAGE_SIZE);
-                      return pagedRows.map((row, i) => {
-                        const isFirst = row.sku !== lastSku;
-                        lastSku = row.sku;
-                        const isJDL = row.wh_code === 'JDL' || row.wh?.startsWith('SYD') || row.wh?.startsWith('MEL') || row.wh_code === 'JDL';
-                        const whColor = isJDL ? C.accent : '#7C3AED';
-                        return (
-                          <tr key={i} className="row-hover" style={{
-                            borderBottom: `1px solid ${C.border}`,
-                            borderTop: isFirst && i > 0 ? `2px solid ${C.border}` : 'none',
-                          }}>
-                            <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: C.accent, fontWeight: 600, fontSize: 12, opacity: isFirst ? 1 : 0.3 }}>
-                              {isFirst ? row.sku : ''}
-                            </td>
-                            <td style={{ padding: '10px 16px' }}>
-                              <span style={{
-                                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
-                                background: isJDL ? C.accentDim : '#F5F3FF',
-                                color: whColor,
-                                border: `1px solid ${isJDL ? '#BFDBFE' : '#DDD6FE'}`,
-                              }}>{row.wh}</span>
-                            </td>
-                            <td style={{ padding: '10px 16px', fontWeight: 600, color: row.s > 0 ? C.success : C.muted }}>{row.s}</td>
-                            <td style={{ padding: '10px 16px', color: row.r > 0 ? C.warning : C.muted }}>{row.r}</td>
-                            <td style={{ padding: '10px 16px', color: row.o > 0 ? C.accent : C.muted }}>{row.o}</td>
-                            <td style={{ padding: '10px 16px', fontWeight: 700, color: C.text }}>{row.t}</td>
-                          </tr>
-                        );
-                      });
-                    })()}
+                    {pagedRows.map((row, i) => {
+                      const isJDL = row.wh !== 'ECCANG';
+                      const whColor = isJDL ? C.accent : '#7C3AED';
+                      const prevRow = pagedRows[i-1];
+                      const isFirst = !prevRow || prevRow.sku !== row.sku;
+                      return (
+                        <tr key={i} className="row-hover" style={{
+                          borderBottom: `1px solid ${C.border}`,
+                          borderTop: isFirst && i > 0 ? `2px solid ${C.border}` : 'none',
+                        }}>
+                          <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: C.accent, fontWeight: 600, fontSize: 12, opacity: isFirst ? 1 : 0.3 }}>
+                            {isFirst ? row.sku : ''}
+                          </td>
+                          <td style={{ padding: '10px 16px' }}>
+                            <span style={{
+                              fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                              background: isJDL ? C.accentDim : '#F5F3FF',
+                              color: whColor,
+                              border: `1px solid ${isJDL ? '#BFDBFE' : '#DDD6FE'}`,
+                            }}>{row.wh}</span>
+                          </td>
+                          <td style={{ padding: '10px 16px', fontWeight: 600, color: row.s > 0 ? C.success : C.muted }}>{row.s}</td>
+                          <td style={{ padding: '10px 16px', color: row.r > 0 ? C.warning : C.muted }}>{row.r}</td>
+                          <td style={{ padding: '10px 16px', color: row.o > 0 ? C.accent : C.muted }}>{row.o}</td>
+                          <td style={{ padding: '10px 16px', fontWeight: 700, color: C.text }}>{row.t}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
-                
-                <Pagination page={invPage} total={inventory.length} pageSize={PAGE_SIZE} onChange={setInvPage} />
+                <Pagination page={invPage} total={rows.length} pageSize={PAGE_SIZE} onChange={setInvPage} />
                 <div style={{ display: 'flex', gap: 16, padding: '12px 20px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
                   <span><span style={{ color: C.success, fontWeight: 700 }}>■</span> Sellable 可用</span>
                   <span><span style={{ color: C.warning, fontWeight: 700 }}>■</span> Reserved 预占</span>
@@ -602,7 +580,8 @@ export default function Portal() {
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Empty state */}
         {!searched && !loading && (
