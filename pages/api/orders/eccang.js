@@ -1,11 +1,10 @@
 /**
  * /api/orders/eccang
- * 直接从 ECCANG 拉取订单数据
+ * 直接从 ECCANG 拉取订单，支持分页循环拉全量
  *
- * GET ?q=ORDER123          按订单号搜索
- * GET ?ref=REF456          按参考号搜索
- * GET ?status=shipped      按状态过滤
- * GET ?page=1&pageSize=50  分页
+ * GET ?q=ORDER123          按订单号/参考号搜索
+ * GET ?page=1&pageSize=50  分页（默认只拉当页）
+ * GET ?all=1               拉所有订单（循环分页，最多20页）
  */
 
 import xml2js from 'xml2js';
@@ -14,6 +13,7 @@ const ECCANG_BASE_URL = process.env.ECCANG_BASE_URL;
 const APP_TOKEN       = process.env.ECCANG_APP_TOKEN;
 const APP_KEY         = process.env.ECCANG_APP_KEY;
 const WAREHOUSE_CODE  = process.env.ECCANG_WAREHOUSE_CODE || 'AUSYD';
+const PAGE_SIZE       = 50;
 
 function buildSoap(service, paramsJson) {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -51,30 +51,28 @@ async function callEccang(service, params) {
 }
 
 function normaliseOrder(order) {
-  // 统一订单格式
   const items = order.details
     ? (Array.isArray(order.details) ? order.details : [order.details])
     : [];
-
   return {
-    order_number:     order.order_code         || order.ref_code,
-    reference_no:     order.ref_code           || order.order_code,
+    id:               order.order_code,
+    order_number:     order.order_code,
+    reference_no:     order.ref_code           || '',
     warehouse:        order.warehouse_code      || WAREHOUSE_CODE,
-    status:           order.order_status_name  || order.order_status || '',
-    status_code:      order.order_status,
+    status:           (order.order_status_name || order.order_status || '').toLowerCase(),
     carrier:          order.logistics_name      || '',
     tracking_number:  order.logistics_code      || '',
     created_at:       order.create_time         || '',
     shipped_at:       order.delivery_time       || '',
     ship_to_name:     order.consignee_name      || '',
-    ship_to_address:  [order.country, order.province, order.city, order.address]
-                        .filter(Boolean).join(', '),
-    items: items.map(i => ({
+    ship_to_address:  [order.country, order.province, order.city, order.address].filter(Boolean).join(', '),
+    order_type:       'standard',
+    client:           order.ref_code?.startsWith('ASL') ? 'ASL' : order.ref_code?.startsWith('CCEP') ? 'CCEP' : '2SA',
+    order_items: items.map(i => ({
       sku:          i.product_sku,
       product_name: i.product_name || '',
       quantity:     parseInt(i.quantity) || 0,
     })),
-    raw: order,
   };
 }
 
@@ -85,50 +83,60 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { q, ref, status, page = '1', pageSize = '50' } = req.query;
+    const { q, page = '1', pageSize = String(PAGE_SIZE), all } = req.query;
 
-    // 按订单号精确查询
-    if (q && !q.includes(' ')) {
-      const data = await callEccang('getOrderByCode', {
-        order_code:     q,
-        warehouse_code: WAREHOUSE_CODE,
-      });
-      if (data.ask !== 'Success') {
-        // 尝试按参考号查
-        const data2 = await callEccang('getOrderByRefCode', {
-          ref_code:       q,
-          warehouse_code: WAREHOUSE_CODE,
-        });
-        if (data2.ask !== 'Success') {
-          return res.status(200).json({ success: true, count: 0, data: [] });
-        }
-        const orders = Array.isArray(data2.data) ? data2.data : (data2.data ? [data2.data] : []);
-        return res.status(200).json({
-          success: true, count: orders.length,
-          data: orders.map(normaliseOrder),
-        });
+    // 精确搜索：按订单号或参考号
+    if (q?.trim()) {
+      // 先试订单号
+      const d1 = await callEccang('getOrderByCode', { order_code: q.trim(), warehouse_code: WAREHOUSE_CODE });
+      if (d1.ask === 'Success' && d1.data) {
+        const orders = Array.isArray(d1.data) ? d1.data : [d1.data];
+        return res.status(200).json({ success: true, count: orders.length, data: orders.map(normaliseOrder) });
       }
-      const orders = Array.isArray(data.data) ? data.data : (data.data ? [data.data] : []);
-      return res.status(200).json({
-        success: true, count: orders.length,
-        data: orders.map(normaliseOrder),
-      });
+      // 再试参考号
+      const d2 = await callEccang('getOrderByRefCode', { ref_code: q.trim(), warehouse_code: WAREHOUSE_CODE });
+      if (d2.ask === 'Success' && d2.data) {
+        const orders = Array.isArray(d2.data) ? d2.data : [d2.data];
+        return res.status(200).json({ success: true, count: orders.length, data: orders.map(normaliseOrder) });
+      }
+      // 试列表搜索
+      const d3 = await callEccang('getOrderList', { page: 1, pageSize: String(PAGE_SIZE), warehouse_code: WAREHOUSE_CODE, ref_code: q.trim() });
+      if (d3.ask === 'Success') {
+        const orders = Array.isArray(d3.data) ? d3.data : (d3.data ? [d3.data] : []);
+        return res.status(200).json({ success: true, count: orders.length, data: orders.map(normaliseOrder) });
+      }
+      return res.status(200).json({ success: true, count: 0, data: [] });
     }
 
-    // 列表查询
-    const params = {
-      page:           parseInt(page),
-      pageSize:       String(parseInt(pageSize)),
-      warehouse_code: WAREHOUSE_CODE,
-    };
-    if (ref)    params.ref_code     = ref;
-    if (status) params.order_status = status;
+    // 拉全量（循环分页）
+    if (all === '1') {
+      const allOrders = [];
+      let p = 1;
+      let hasMore = true;
+      while (hasMore && p <= 20) {
+        const data = await callEccang('getOrderList', {
+          page:           p,
+          pageSize:       String(PAGE_SIZE),
+          warehouse_code: WAREHOUSE_CODE,
+        });
+        if (data.ask !== 'Success') break;
+        const orders = Array.isArray(data.data) ? data.data : (data.data ? [data.data] : []);
+        allOrders.push(...orders.map(normaliseOrder));
+        hasMore = data.nextPage === 'true' || data.nextPage === true;
+        p++;
+      }
+      return res.status(200).json({ success: true, count: allOrders.length, pages_fetched: p - 1, data: allOrders });
+    }
 
-    const data = await callEccang('getOrderList', params);
+    // 单页查询（默认）
+    const data = await callEccang('getOrderList', {
+      page:           parseInt(page),
+      pageSize:       pageSize,
+      warehouse_code: WAREHOUSE_CODE,
+    });
     if (data.ask !== 'Success') {
       return res.status(400).json({ error: data.message || 'ECCANG error' });
     }
-
     const orders = Array.isArray(data.data) ? data.data : (data.data ? [data.data] : []);
     return res.status(200).json({
       success:  true,
