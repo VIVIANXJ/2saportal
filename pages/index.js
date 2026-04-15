@@ -64,12 +64,11 @@ function TypeTag({ type }) {
 }
 
 
-function Pagination({ page, total, pageSize, onChange }) {
+function Pagination({ page: currentPage, total, pageSize, onChange }) {
   const totalPages = Math.ceil(total / pageSize);
   if (totalPages <= 1) return null;
   const pages = [];
-  // 显示最多7个页码按钮
-  let start = Math.max(1, page - 3);
+  let start = Math.max(1, currentPage - 3);
   let end   = Math.min(totalPages, start + 6);
   if (end - start < 6) start = Math.max(1, end - 6);
   for (let i = start; i <= end; i++) pages.push(i);
@@ -83,14 +82,14 @@ function Pagination({ page, total, pageSize, onChange }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '14px 20px', borderTop: '1px solid #E2E8F0', justifyContent: 'space-between' }}>
       <span style={{ fontSize: 12, color: '#64748B' }}>
-        {((page-1)*pageSize)+1}–{Math.min(page*pageSize, total)} of {total}
+        {((currentPage-1)*pageSize)+1}–{Math.min(currentPage*pageSize, total)} of {total}
       </span>
       <div style={{ display: 'flex', gap: 4 }}>
-        <button onClick={() => onChange(1)}       disabled={page===1}          style={btnStyle(false)}>«</button>
-        <button onClick={() => onChange(page-1)}  disabled={page===1}          style={btnStyle(false)}>‹</button>
-        {pages.map(p => <button key={p} onClick={() => onChange(p)} style={btnStyle(p===page)}>{p}</button>)}
-        <button onClick={() => onChange(page+1)}  disabled={page===totalPages} style={btnStyle(false)}>›</button>
-        <button onClick={() => onChange(totalPages)} disabled={page===totalPages} style={btnStyle(false)}>»</button>
+        <button onClick={() => onChange(1)}              disabled={currentPage===1}           style={btnStyle(false)}>«</button>
+        <button onClick={() => onChange(currentPage-1)}  disabled={currentPage===1}           style={btnStyle(false)}>‹</button>
+        {pages.map(p => <button key={p} onClick={() => onChange(p)} style={btnStyle(p===currentPage)}>{p}</button>)}
+        <button onClick={() => onChange(currentPage+1)}  disabled={currentPage===totalPages}  style={btnStyle(false)}>›</button>
+        <button onClick={() => onChange(totalPages)}     disabled={currentPage===totalPages}  style={btnStyle(false)}>»</button>
       </div>
     </div>
   );
