@@ -81,9 +81,11 @@ async function fetchJdl(skuList) {
   const timestamp = new Date(Date.now() + 8 * 3600 * 1000)
     .toISOString().replace('T', ' ').slice(0, 19);
 
-  // body 参数
-  const body = { pageNum: 1, pageSize: 50 };
-  if (skuList?.length) body.customerGoodsIdList = skuList;
+  // SDK: getAppJsonParams/getBodyObject 都是把 ReqDto 放入 List 后序列化
+  // 所以 body 和 param_json 都必须是数组 [{...}] 格式
+  const bodyObj = { page: 1, pageSize: 50 };
+  if (skuList?.length) bodyObj.customerGoodsIdList = skuList;
+  const body = [bodyObj]; // ← 必须用 [] 包裹
 
   // JDL 签名规则（来自 SDK OAuth2Template.sign 方法）：
   // 1. 用 TreeMap（字母排序）存所有参与签名的参数
