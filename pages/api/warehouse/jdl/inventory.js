@@ -53,6 +53,7 @@ async function queryWarehouse(warehouseCode, skuList, page = 1, pageSize = 50) {
   url.searchParams.set('timestamp',    timestamp);
   url.searchParams.set('v',            '2.0');
   url.searchParams.set('sign',         sign);
+  url.searchParams.set('method',        METHOD);
   url.searchParams.set('LOP-DN',       'JD_FOP_FULFILLMENT_CENTE');
 
   const res  = await fetch(url.toString(), {
