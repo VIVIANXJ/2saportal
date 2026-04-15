@@ -85,18 +85,15 @@ async function fetchJdl(skuList) {
   const body = { pageNum: 1, pageSize: 50 };
   if (skuList?.length) body.customerGoodsIdList = skuList;
 
-  // 签名只包含 URL 参数，body 参数不参与签名
-  const signParams = {
-    app_key:      APP_KEY,
-    access_token: ACCESS_TOKEN,
-    timestamp,
-    v:            '2.0',
-  };
-
-  const content = APP_SECRET
-    + Object.keys(signParams).sort().map(k => `${k}${signParams[k]}`).join('')
+  // JDL 签名：固定顺序拼接（参数名+参数值），不排序
+  // 格式：appSecret + "app_key" + appKey + "access_token" + accessToken + "timestamp" + timestamp + "v" + v + appSecret
+  const signContent = APP_SECRET
+    + 'app_key'      + APP_KEY
+    + 'access_token' + ACCESS_TOKEN
+    + 'timestamp'    + timestamp
+    + 'v'            + '2.0'
     + APP_SECRET;
-  const sign = crypto.createHash('md5').update(content, 'utf8').digest('hex').toUpperCase();
+  const sign = crypto.createHash('md5').update(signContent, 'utf8').digest('hex').toUpperCase();
 
   // 构建 URL，LOP-DN 只加到 URL，不参与签名
   const url = new URL('/fop/open/stockprovider/querystockwarehouselistbypage', BASE_URL);
