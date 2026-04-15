@@ -86,10 +86,13 @@ async function fetchJdlWarehouse(skuList, warehouseCode) {
     .toISOString().replace('T', ' ').slice(0, 19);
 
   const bodyObj = {
-    page:         1,
-    pageSize:     50,
-    customerCode: CUSTOMER_CODE,
+    page:            1,
+    pageSize:        50,
+    customerCode:    CUSTOMER_CODE,
     warehouseCode,
+    operatorAccount: process.env.JDL_OPERATOR_ACCT || 'g70capital',
+    systemCode:      process.env.JDL_SYSTEM_CODE   || '2satest',
+    systemType:      '10',
   };
   if (skuList?.length) bodyObj.customerGoodsIdList = skuList;
   const body = [bodyObj];
