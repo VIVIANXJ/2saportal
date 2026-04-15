@@ -63,6 +63,39 @@ function TypeTag({ type }) {
   );
 }
 
+
+function Pagination({ page, total, pageSize, onChange }) {
+  const totalPages = Math.ceil(total / pageSize);
+  if (totalPages <= 1) return null;
+  const pages = [];
+  // 显示最多7个页码按钮
+  let start = Math.max(1, page - 3);
+  let end   = Math.min(totalPages, start + 6);
+  if (end - start < 6) start = Math.max(1, end - 6);
+  for (let i = start; i <= end; i++) pages.push(i);
+
+  const btnStyle = (active) => ({
+    padding: '6px 11px', borderRadius: 6, border: `1px solid ${active ? '#2563EB' : '#E2E8F0'}`,
+    background: active ? '#2563EB' : '#fff', color: active ? '#fff' : '#475569',
+    fontWeight: active ? 700 : 400, fontSize: 13, cursor: 'pointer', transition: 'all 0.1s',
+  });
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '14px 20px', borderTop: '1px solid #E2E8F0', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: 12, color: '#64748B' }}>
+        {((page-1)*pageSize)+1}–{Math.min(page*pageSize, total)} of {total}
+      </span>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <button onClick={() => onChange(1)}       disabled={page===1}          style={btnStyle(false)}>«</button>
+        <button onClick={() => onChange(page-1)}  disabled={page===1}          style={btnStyle(false)}>‹</button>
+        {pages.map(p => <button key={p} onClick={() => onChange(p)} style={btnStyle(p===page)}>{p}</button>)}
+        <button onClick={() => onChange(page+1)}  disabled={page===totalPages} style={btnStyle(false)}>›</button>
+        <button onClick={() => onChange(totalPages)} disabled={page===totalPages} style={btnStyle(false)}>»</button>
+      </div>
+    </div>
+  );
+}
+
 function StockBar({ sellable, reserved, onway }) {
   const total = Math.max(sellable + reserved + onway, 1);
   return (
@@ -95,11 +128,16 @@ export default function Portal() {
   const [error, setError]         = useState(null);
   const [expandedOrder, setExpandedOrder] = useState(null);
   const [warehouseStatus, setWarehouseStatus] = useState({});
+  const [orderPage,   setOrderPage]   = useState(1);
+  const [invPage,     setInvPage]     = useState(1);
+  const PAGE_SIZE = 100;
   const inputRef = useRef(null);
 
   const search = useCallback(async (q, type) => {
     setLoading(true);
     setError(null);
+    setOrderPage(1);
+    setInvPage(1);
     try {
       if (tab === 'orders') {
         const params = new URLSearchParams(searchQ ? { pageSize: '50' } : { all: '1', pageSize: '50' });
@@ -131,6 +169,7 @@ export default function Portal() {
   const handleTabSwitch = (t) => {
     setTab(t); setOrders([]); setInventory([]);
     setSearched(false); setError(null); setSearchQ('');
+    setOrderPage(1); setInvPage(1);
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
@@ -319,7 +358,7 @@ export default function Portal() {
             ) : (
               <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div style={{ padding: '12px 20px', borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted, fontWeight: 500 }}>
-                  {orders.length} result{orders.length !== 1 ? 's' : ''}
+                  {orders.length} result{orders.length !== 1 ? 's' : ''} · Page {orderPage}/{Math.max(1,Math.ceil(orders.length/PAGE_SIZE))}
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -334,7 +373,7 @@ export default function Portal() {
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.map(order => (
+                    {orders.slice((orderPage-1)*PAGE_SIZE, orderPage*PAGE_SIZE).map(order => (
                       <>
                         <tr
                           key={order.id}
@@ -428,6 +467,7 @@ export default function Portal() {
                     ))}
                   </tbody>
                 </table>
+                <Pagination page={orderPage} total={orders.length} pageSize={PAGE_SIZE} onChange={setOrderPage} />
               </div>
             )}
           </div>
@@ -447,7 +487,7 @@ export default function Portal() {
             ) : (
               <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div style={{ padding: '12px 20px', borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted, fontWeight: 500 }}>
-                  {inventory.length} SKU{inventory.length !== 1 ? 's' : ''}
+                  {inventory.length} SKU{inventory.length !== 1 ? 's' : ''} · Page {invPage}/{Math.max(1,Math.ceil(inventory.length/PAGE_SIZE))}
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -495,7 +535,8 @@ export default function Portal() {
 
                       // 按 SKU 分组显示，同 SKU 多行合并第一列
                       let lastSku = null;
-                      return rows.map((row, i) => {
+                      const pagedRows = rows.slice((invPage-1)*PAGE_SIZE, invPage*PAGE_SIZE);
+                      return pagedRows.map((row, i) => {
                         const isFirst = row.sku !== lastSku;
                         lastSku = row.sku;
                         const isJDL = row.wh_code === 'JDL' || row.wh?.startsWith('SYD') || row.wh?.startsWith('MEL') || row.wh_code === 'JDL';
@@ -526,6 +567,7 @@ export default function Portal() {
                     })()}
                   </tbody>
                 </table>
+                <Pagination page={invPage} total={inventory.length} pageSize={PAGE_SIZE} onChange={setInvPage} />
                 <div style={{ display: 'flex', gap: 16, padding: '12px 20px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
                   <span><span style={{ color: C.success, fontWeight: 700 }}>■</span> Sellable 可用</span>
                   <span><span style={{ color: C.warning, fontWeight: 700 }}>■</span> Reserved 预占</span>
