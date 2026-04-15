@@ -85,13 +85,22 @@ async function fetchJdl(skuList) {
   const body = { pageNum: 1, pageSize: 50 };
   if (skuList?.length) body.customerGoodsIdList = skuList;
 
-  // JDL 签名：固定顺序拼接（参数名+参数值），不排序
-  // 格式：appSecret + "app_key" + appKey + "access_token" + accessToken + "timestamp" + timestamp + "v" + v + appSecret
+  // JDL 签名规则（来自 SDK OAuth2Template.sign 方法）：
+  // 1. 用 TreeMap（字母排序）存所有参与签名的参数
+  // 2. content = appSecret + 所有 key+value（按字母序） + appSecret
+  // 参与签名的参数：access_token, app_key, method, param_json(body JSON), timestamp, v
+  const METHOD = '/fop/open/stockprovider/querystockwarehouselistbypage';
+  const paramJson = JSON.stringify(body);
+  const signMap = {
+    access_token: ACCESS_TOKEN,
+    app_key:      APP_KEY,
+    method:       METHOD,
+    param_json:   paramJson,
+    timestamp,
+    v:            '2.0',
+  };
   const signContent = APP_SECRET
-    + 'app_key'      + APP_KEY
-    + 'access_token' + ACCESS_TOKEN
-    + 'timestamp'    + timestamp
-    + 'v'            + '2.0'
+    + Object.keys(signMap).sort().map(k => k + signMap[k]).join('')
     + APP_SECRET;
   const sign = crypto.createHash('md5').update(signContent, 'utf8').digest('hex').toUpperCase();
 
