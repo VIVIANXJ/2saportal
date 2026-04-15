@@ -342,6 +342,7 @@ function InventoryView({ token }) {
           {items.length === 0 ? (
             <div style={{ padding: '40px', textAlign: 'center', color: C.muted, fontSize: 14 }}>No inventory found</div>
           ) : (
+            <>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: C.surfaceAlt }}>
@@ -373,6 +374,7 @@ function InventoryView({ token }) {
               </tbody>
             </table>
             <Pagination page={invCurPage} total={items.length} pageSize={PAGE_SIZE} onChange={setInvCurPage} />
+            </>
           )}
         </div>
       )}
@@ -429,6 +431,7 @@ function OrderSearch({ token }) {
           {orders.length === 0 ? (
             <div style={{ padding: '40px', textAlign: 'center', color: C.muted, fontSize: 14 }}>No orders found</div>
           ) : (
+            <>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: C.surfaceAlt }}>
@@ -454,6 +457,7 @@ function OrderSearch({ token }) {
               </tbody>
             </table>
             <Pagination page={ordCurPage} total={orders.length} pageSize={PAGE_SIZE} onChange={setOrdCurPage} />
+            </>
           )}
         </div>
       )}
