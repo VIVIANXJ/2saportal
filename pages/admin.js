@@ -11,11 +11,11 @@ const C = {
 
 
 const C_PAGE = { border: '#E2E8F0', accent: '#2563EB', muted: '#475569', bg: '#fff' };
-function Pagination({ page, total, pageSize, onChange }) {
+function Pagination({ page: currentPage, total, pageSize, onChange }) {
   const totalPages = Math.ceil(total / pageSize);
   if (totalPages <= 1) return null;
   const pages = [];
-  let start = Math.max(1, page - 3);
+  let start = Math.max(1, currentPage - 3);
   let end   = Math.min(totalPages, start + 6);
   if (end - start < 6) start = Math.max(1, end - 6);
   for (let i = start; i <= end; i++) pages.push(i);
@@ -26,13 +26,13 @@ function Pagination({ page, total, pageSize, onChange }) {
   });
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderTop: `1px solid ${C_PAGE.border}` }}>
-      <span style={{ fontSize: 12, color: C_PAGE.muted }}>{((page-1)*pageSize)+1}–{Math.min(page*pageSize,total)} of {total}</span>
+      <span style={{ fontSize: 12, color: C_PAGE.muted }}>{((currentPage-1)*pageSize)+1}–{Math.min(currentPage*pageSize,total)} of {total}</span>
       <div style={{ display: 'flex', gap: 3 }}>
-        <button onClick={() => onChange(1)}          disabled={page===1}           style={btn(false)}>«</button>
-        <button onClick={() => onChange(page-1)}     disabled={page===1}           style={btn(false)}>‹</button>
-        {pages.map(p => <button key={p} onClick={() => onChange(p)} style={btn(p===page)}>{p}</button>)}
-        <button onClick={() => onChange(page+1)}     disabled={page===totalPages}  style={btn(false)}>›</button>
-        <button onClick={() => onChange(totalPages)} disabled={page===totalPages}  style={btn(false)}>»</button>
+        <button onClick={() => onChange(1)}               disabled={currentPage===1}           style={btn(false)}>«</button>
+        <button onClick={() => onChange(currentPage-1)}   disabled={currentPage===1}           style={btn(false)}>‹</button>
+        {pages.map(p => <button key={p} onClick={() => onChange(p)} style={btn(p===currentPage)}>{p}</button>)}
+        <button onClick={() => onChange(currentPage+1)}   disabled={currentPage===totalPages}  style={btn(false)}>›</button>
+        <button onClick={() => onChange(totalPages)}      disabled={currentPage===totalPages}  style={btn(false)}>»</button>
       </div>
     </div>
   );
