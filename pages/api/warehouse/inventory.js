@@ -106,7 +106,7 @@ async function fetchJdl(skuList) {
   url.searchParams.set('timestamp',    timestamp);
   url.searchParams.set('v',            '2.0');
   url.searchParams.set('sign',         sign);
-  url.searchParams.set('LOP-DN',       'FOP');
+  url.searchParams.set('LOP-DN',       'JD_FOP_FULFILLMENT_CENTE');
 
   try {
     const res = await fetch(url.toString(), {
