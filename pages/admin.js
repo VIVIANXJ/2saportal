@@ -9,6 +9,35 @@ const C = {
   warning: '#D97706', warningBg: '#FFFBEB',
 };
 
+
+const C_PAGE = { border: '#E2E8F0', accent: '#2563EB', muted: '#475569', bg: '#fff' };
+function Pagination({ page, total, pageSize, onChange }) {
+  const totalPages = Math.ceil(total / pageSize);
+  if (totalPages <= 1) return null;
+  const pages = [];
+  let start = Math.max(1, page - 3);
+  let end   = Math.min(totalPages, start + 6);
+  if (end - start < 6) start = Math.max(1, end - 6);
+  for (let i = start; i <= end; i++) pages.push(i);
+  const btn = (active) => ({
+    padding: '5px 10px', borderRadius: 6, border: `1px solid ${active ? C_PAGE.accent : C_PAGE.border}`,
+    background: active ? C_PAGE.accent : C_PAGE.bg, color: active ? '#fff' : C_PAGE.muted,
+    fontWeight: active ? 700 : 400, fontSize: 12, cursor: 'pointer',
+  });
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderTop: `1px solid ${C_PAGE.border}` }}>
+      <span style={{ fontSize: 12, color: C_PAGE.muted }}>{((page-1)*pageSize)+1}–{Math.min(page*pageSize,total)} of {total}</span>
+      <div style={{ display: 'flex', gap: 3 }}>
+        <button onClick={() => onChange(1)}          disabled={page===1}           style={btn(false)}>«</button>
+        <button onClick={() => onChange(page-1)}     disabled={page===1}           style={btn(false)}>‹</button>
+        {pages.map(p => <button key={p} onClick={() => onChange(p)} style={btn(p===page)}>{p}</button>)}
+        <button onClick={() => onChange(page+1)}     disabled={page===totalPages}  style={btn(false)}>›</button>
+        <button onClick={() => onChange(totalPages)} disabled={page===totalPages}  style={btn(false)}>»</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Login Screen ──────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
   const [username, setUsername] = useState('');
@@ -255,9 +284,11 @@ function InventoryView({ token }) {
   const [error,   setError]   = useState('');
   const [searched,setSearched]= useState(false);
   const [total,   setTotal]   = useState(0);
+  const [page,    setPage]    = useState(1);
+  const PAGE_SIZE = 100;
 
   const search = async (fetchAll = false) => {
-    setLoading(true); setError('');
+    setLoading(true); setError(''); setPage(1);
     try {
       const params = new URLSearchParams();
       if (sku.trim()) params.set('sku', sku.trim());
@@ -320,7 +351,7 @@ function InventoryView({ token }) {
                 </tr>
               </thead>
               <tbody>
-                {items.flatMap((item, i) => {
+                {items.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE).flatMap((item, i) => {
                   const whEntries = Object.entries(item.warehouses);
                   return whEntries.map(([wh, data], j) => {
                     const isJDL = wh !== 'ECCANG';
@@ -341,6 +372,7 @@ function InventoryView({ token }) {
                 })}
               </tbody>
             </table>
+            <Pagination page={page} total={items.length} pageSize={PAGE_SIZE} onChange={setPage} />
           )}
         </div>
       )}
@@ -355,9 +387,11 @@ function OrderSearch({ token }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
   const [searched,setSearched]= useState(false);
+  const [page,    setPage]    = useState(1);
+  const PAGE_SIZE = 100;
 
   const search = async () => {
-    setLoading(true); setError(''); setSearched(true);
+    setLoading(true); setError(''); setSearched(true); setPage(1);
     try {
       const params = new URLSearchParams(q ? { pageSize: '50' } : { all: '1' });
       if (q) params.set('q', q);
@@ -404,7 +438,7 @@ function OrderSearch({ token }) {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o, i) => (
+                {orders.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE).map((o, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
                     <td style={{ padding: '10px 14px', color: C.accent, fontWeight: 600 }}>{o.order_number}</td>
                     <td style={{ padding: '10px 14px', color: C.muted, fontSize: 12 }}>{o.reference_no || '—'}</td>
@@ -419,6 +453,7 @@ function OrderSearch({ token }) {
                 ))}
               </tbody>
             </table>
+            <Pagination page={page} total={orders.length} pageSize={PAGE_SIZE} onChange={setPage} />
           )}
         </div>
       )}
