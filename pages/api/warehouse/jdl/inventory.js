@@ -56,12 +56,15 @@ async function queryWarehouse(warehouseCode, skuList, page = 1, pageSize = 50) {
   url.searchParams.set('method',        METHOD);
   url.searchParams.set('LOP-DN',       'JD_FOP_FULFILLMENT_CENTE');
 
+  console.log('[JDL] Full URL:', url.toString());
+  console.log('[JDL] Body:', JSON.stringify(body));
   const res  = await fetch(url.toString(), {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify(body),
   });
   const text = await res.text();
+  console.log('[JDL] Response:', text.slice(0, 300));
   if (!res.ok) throw new Error(`JDL HTTP ${res.status}: ${text.slice(0, 300)}`);
   return JSON.parse(text);
 }
