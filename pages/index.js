@@ -373,28 +373,18 @@ export default function Portal() {
         )}
 
         {/* Orders table */}
-        {tab === 'orders' && searched && !loading && (
+        {tab === 'orders' && searched && !loading && (() => {
+          const q = orderSearch.trim().toLowerCase();
+          const filteredOrders = q
+            ? orders.filter(o =>
+                (o.order_number || '').toLowerCase().includes(q) ||
+                (o.reference_no || '').toLowerCase().includes(q)
+              )
+            : orders;
+          const pagedOrders = filteredOrders.slice((orderPage-1)*PAGE_SIZE, orderPage*PAGE_SIZE);
+          return (
           <div style={{ animation: 'fadeIn 0.2s ease' }}>
-            {(() => {
-              const q = orderSearch.trim().toLowerCase();
-              const filteredOrders = q
-                ? orders.filter(o =>
-                    (o.order_number  || '').toLowerCase().includes(q) ||
-                    (o.reference_no  || '').toLowerCase().includes(q)
-                  )
-                : orders;
-              window._filteredOrders = filteredOrders; // expose for pagination
-              return null;
-            })()}
-            {(() => {
-              const q = orderSearch.trim().toLowerCase();
-              const filteredOrders = q
-                ? orders.filter(o =>
-                    (o.order_number  || '').toLowerCase().includes(q) ||
-                    (o.reference_no  || '').toLowerCase().includes(q)
-                  )
-                : orders;
-            return filteredOrders.length === 0 ? (
+            {filteredOrders.length === 0 ? (
               <div style={{
                 textAlign: 'center', color: C.muted, padding: '64px 0',
                 background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`,
@@ -406,7 +396,7 @@ export default function Portal() {
               <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, color: C.muted, fontWeight: 500 }}>
-                    {filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''} · Page {orderPage}/{Math.max(1,Math.ceil(filteredOrders.length/PAGE_SIZE))}
+                    {filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''}
                   </span>
                   <input
                     value={orderSearch}
@@ -428,7 +418,7 @@ export default function Portal() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredOrders.slice((orderPage-1)*PAGE_SIZE, orderPage*PAGE_SIZE).map(order => (
+                    {pagedOrders.map(order => (
                       <>
                         <tr
                           key={order.id}
@@ -451,10 +441,9 @@ export default function Portal() {
                             {order.tracking_number || <span style={{ color: C.border, fontFamily: 'inherit' }}>—</span>}
                           </td>
                           <td style={{ padding: '12px 16px', color: C.muted, fontSize: 12 }}>
-                            {new Date(order.created_at).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {order.created_at ? new Date(order.created_at).toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                           </td>
                         </tr>
-
                         {expandedOrder === order.id && (
                           <tr key={`${order.id}-detail`}>
                             <td colSpan={8} style={{ background: '#F8FAFF', borderBottom: `1px solid ${C.border}`, padding: '20px 24px' }}>
@@ -474,44 +463,10 @@ export default function Portal() {
                                     ))}
                                   </div>
                                 )}
-
-                                {order.kitting_jobs?.length > 0 && (
-                                  <div>
-                                    <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 10 }}>Kitting Jobs</div>
-                                    {order.kitting_jobs.map((job, i) => (
-                                      <div key={i} style={{ marginBottom: 12, padding: '10px', background: C.warningBg, borderRadius: 8, border: `1px solid #FDE68A` }}>
-                                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
-                                          <span style={{ color: C.warning, fontWeight: 700, fontFamily: 'monospace', fontSize: 12 }}>{job.kit_sku}</span>
-                                          <span style={{ color: C.dimmed, fontSize: 13 }}>{job.kit_name}</span>
-                                          <span style={{ fontWeight: 600 }}>×{job.quantity}</span>
-                                          <Badge status={job.status} />
-                                        </div>
-                                        {job.kitting_components?.map((c, j) => (
-                                          <div key={j} style={{ fontSize: 12, color: C.muted, paddingLeft: 12, display: 'flex', gap: 8, marginTop: 3 }}>
-                                            <span>↳</span>
-                                            <span style={{ color: C.accent, fontFamily: 'monospace' }}>{c.component_sku}</span>
-                                            <span>{c.component_name}</span>
-                                            <span style={{ color: C.muted }}>×{c.qty_per_kit} per kit</span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-
                                 {order.ship_to_name && (
                                   <div>
                                     <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Ship To</div>
-                                    <div style={{ fontSize: 13, color: C.dimmed, lineHeight: 1.6 }}>
-                                      {order.ship_to_name}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {order.notes && (
-                                  <div>
-                                    <div style={{ fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Notes</div>
-                                    <div style={{ fontSize: 13, color: C.dimmed }}>{order.notes}</div>
+                                    <div style={{ fontSize: 13, color: C.dimmed }}>{order.ship_to_name}</div>
                                   </div>
                                 )}
                               </div>
@@ -524,10 +479,10 @@ export default function Portal() {
                 </table>
                 <Pagination page={orderPage} total={filteredOrders.length} pageSize={PAGE_SIZE} onChange={setOrderPage} />
               </div>
-            )})()}
+            )}
           </div>
-        )}
-
+          );
+        })()}
         {/* Inventory table */}
         {tab === 'inventory' && searched && !loading && (
           <div style={{ animation: 'fadeIn 0.2s ease' }}>
