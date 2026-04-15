@@ -32,13 +32,20 @@ function getTimestamp() {
 }
 
 /** JDL MD5 sign: appSecret + sorted(k+v) + appSecret → MD5 → UPPERCASE */
-function buildSign(appKey, accessToken, timestamp, secret) {
-  // JDL 固定顺序签名：不排序，参数名+参数值直接拼接
+function buildSign(appKey, accessToken, timestamp, secret, body) {
+  // JDL 签名规则（来自 SDK OAuth2Template.sign 方法）：
+  // TreeMap 字母排序，包含 access_token, app_key, method, param_json(body JSON), timestamp, v
+  const METHOD = '/fop/open/stockprovider/querystockwarehouselistbypage';
+  const signMap = {
+    access_token: accessToken,
+    app_key:      appKey,
+    method:       METHOD,
+    param_json:   JSON.stringify(body),
+    timestamp,
+    v:            '2.0',
+  };
   const content = secret
-    + 'app_key'      + appKey
-    + 'access_token' + accessToken
-    + 'timestamp'    + timestamp
-    + 'v'            + '2.0'
+    + Object.keys(signMap).sort().map(k => k + signMap[k]).join('')
     + secret;
   return crypto.createHash('md5').update(content, 'utf8').digest('hex').toUpperCase();
 }
@@ -47,7 +54,7 @@ function buildSign(appKey, accessToken, timestamp, secret) {
 async function callIfop(path, body = {}) {
   const timestamp = getTimestamp();
   const urlParams = { app_key: APP_KEY, access_token: ACCESS_TOKEN, timestamp, v: '2.0' };
-  const sign = buildSign(APP_KEY, ACCESS_TOKEN, timestamp, APP_SECRET);
+  const sign = buildSign(APP_KEY, ACCESS_TOKEN, timestamp, APP_SECRET, body);
 
   const url = new URL(path, BASE_URL);
   Object.entries({ ...urlParams, sign }).forEach(([k, v]) => url.searchParams.set(k, v));
