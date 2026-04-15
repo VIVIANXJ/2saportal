@@ -68,11 +68,15 @@ async function fetchEccang(skuList) {
 }
 
 // ── JDL ─────────────────────────────────────────────────────
-async function fetchJdl(skuList) {
-  const BASE_URL     = process.env.JDL_BASE_URL || 'https://intl-api.jdl.com';
-  const APP_KEY      = process.env.JDL_APP_KEY;
-  const APP_SECRET   = process.env.JDL_APP_SECRET;
-  const ACCESS_TOKEN = process.env.JDL_ACCESS_TOKEN;
+const JDL_WAREHOUSES = ['SYD-LG-2-AU', 'MEL-SM-1-AU'];
+
+async function fetchJdlWarehouse(skuList, warehouseCode) {
+  const BASE_URL      = process.env.JDL_BASE_URL     || 'https://intl-api.jdl.com';
+  const APP_KEY       = process.env.JDL_APP_KEY;
+  const APP_SECRET    = process.env.JDL_APP_SECRET;
+  const ACCESS_TOKEN  = process.env.JDL_ACCESS_TOKEN;
+  const CUSTOMER_CODE = process.env.JDL_CUSTOMER_CODE || 'KH20000015945';
+  const METHOD        = '/fop/open/stockprovider/querystockwarehouselistbypage';
 
   if (!ACCESS_TOKEN || !APP_KEY || !APP_SECRET) {
     return { error: 'JDL credentials not configured' };
@@ -81,27 +85,21 @@ async function fetchJdl(skuList) {
   const timestamp = new Date(Date.now() + 8 * 3600 * 1000)
     .toISOString().replace('T', ' ').slice(0, 19);
 
-  // SDK: getAppJsonParams/getBodyObject 都是把 ReqDto 放入 List 后序列化
-  // 所以 body 和 param_json 都必须是数组 [{...}] 格式
   const bodyObj = {
     page:         1,
     pageSize:     50,
-    customerCode: process.env.JDL_CUSTOMER_CODE || 'KH20000015945',
+    customerCode: CUSTOMER_CODE,
+    warehouseCode,
   };
   if (skuList?.length) bodyObj.customerGoodsIdList = skuList;
-  const body = [bodyObj]; // ← 必须用 [] 包裹
+  const body = [bodyObj];
 
-  // JDL 签名规则（来自 SDK OAuth2Template.sign 方法）：
-  // 1. 用 TreeMap（字母排序）存所有参与签名的参数
-  // 2. content = appSecret + 所有 key+value（按字母序） + appSecret
-  // 参与签名的参数：access_token, app_key, method, param_json(body JSON), timestamp, v
-  const METHOD = '/fop/open/stockprovider/querystockwarehouselistbypage';
-  const paramJson = JSON.stringify(body);
+  // 签名：TreeMap 字母排序，包含 method 和 param_json
   const signMap = {
     access_token: ACCESS_TOKEN,
     app_key:      APP_KEY,
     method:       METHOD,
-    param_json:   paramJson,
+    param_json:   JSON.stringify(body),
     timestamp,
     v:            '2.0',
   };
@@ -110,8 +108,7 @@ async function fetchJdl(skuList) {
     + APP_SECRET;
   const sign = crypto.createHash('md5').update(signContent, 'utf8').digest('hex').toUpperCase();
 
-  // 构建 URL，LOP-DN 只加到 URL，不参与签名
-  const url = new URL('/fop/open/stockprovider/querystockwarehouselistbypage', BASE_URL);
+  const url = new URL(METHOD, BASE_URL);
   url.searchParams.set('app_key',      APP_KEY);
   url.searchParams.set('access_token', ACCESS_TOKEN);
   url.searchParams.set('timestamp',    timestamp);
@@ -120,35 +117,57 @@ async function fetchJdl(skuList) {
   url.searchParams.set('LOP-DN',       'JD_FOP_FULFILLMENT_CENTE');
 
   try {
-    const res = await fetch(url.toString(), {
+    const res  = await fetch(url.toString(), {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(body),
     });
     const text = await res.text();
     if (!res.ok) return { error: `JDL HTTP ${res.status}: ${text.slice(0, 200)}` };
-
     const data = JSON.parse(text);
     if (data.code !== 200 && data.code !== '200') {
       return { error: data.message || `JDL code ${data.code}` };
     }
-
     const records = data.data?.records || [];
     return {
       success: true,
       data: records.map(item => ({
-        sku:        item.customerGoodsId,
-        warehouse:  'JDL',
-        sellable:   item.stockQuantity               || 0,
-        reserved:   item.preoccupiedQuantity         || 0,
-        onway:      item.purchaseWaitinStockQuantity  || 0,
-        unsellable: item.defectiveQty                || 0,
-        hold:       item.lockQty                     || 0,
+        sku:            item.customerGoodsId || item.jdGoodsId,
+        warehouse:      'JDL',
+        warehouse_code: warehouseCode,
+        sellable:       item.stockQuantity               || 0,
+        reserved:       item.preoccupiedQuantity         || 0,
+        onway:          item.purchaseWaitinStockQuantity || 0,
+        unsellable:     0,
+        hold:           0,
       }))
     };
   } catch (e) {
     return { error: e.message };
   }
+}
+
+async function fetchJdl(skuList) {
+  // 并行查两个仓库
+  const results = await Promise.allSettled(
+    JDL_WAREHOUSES.map(wh => fetchJdlWarehouse(skuList, wh))
+  );
+
+  const allData = [];
+  const errors  = [];
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled' && r.value.success) {
+      allData.push(...r.value.data);
+    } else {
+      const err = r.status === 'rejected' ? r.reason?.message : r.value?.error;
+      errors.push(`${JDL_WAREHOUSES[i]}: ${err}`);
+    }
+  });
+
+  if (allData.length === 0 && errors.length > 0) {
+    return { error: errors.join(' | ') };
+  }
+  return { success: true, data: allData };
 }
 
 // ── Handler ──────────────────────────────────────────────────
@@ -166,24 +185,33 @@ export default async function handler(req, res) {
     queryEccang ? fetchEccang(skuList) : Promise.resolve(null),
   ]);
 
-  // 按 SKU 合并
+  // 按 SKU 合并，JDL 每个仓库单独一行，ECCANG 一行
   const skuMap = {};
-  const merge = (result, whName) => {
-    if (!result?.data) return;
-    for (const item of result.data) {
+
+  // JDL：每条记录有 warehouse_code，单独一行
+  if (jdlResult?.data) {
+    for (const item of jdlResult.data) {
       if (!item.sku) continue;
       if (!skuMap[item.sku]) skuMap[item.sku] = { sku: item.sku, warehouses: {} };
-      skuMap[item.sku].warehouses[whName] = {
-        sellable:   item.sellable,
-        reserved:   item.reserved,
-        onway:      item.onway,
-        unsellable: item.unsellable,
-        hold:       item.hold,
+      const key = item.warehouse_code || 'JDL';
+      skuMap[item.sku].warehouses[key] = {
+        sellable: item.sellable, reserved: item.reserved,
+        onway: item.onway, unsellable: item.unsellable, hold: item.hold,
       };
     }
-  };
-  merge(jdlResult,    'JDL');
-  merge(eccangResult, 'ECCANG');
+  }
+
+  // ECCANG：单仓
+  if (eccangResult?.data) {
+    for (const item of eccangResult.data) {
+      if (!item.sku) continue;
+      if (!skuMap[item.sku]) skuMap[item.sku] = { sku: item.sku, warehouses: {} };
+      skuMap[item.sku].warehouses['ECCANG'] = {
+        sellable: item.sellable, reserved: item.reserved,
+        onway: item.onway, unsellable: item.unsellable, hold: item.hold,
+      };
+    }
+  }
 
   const combined = Object.values(skuMap).map(entry => ({
     ...entry,
