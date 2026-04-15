@@ -246,6 +246,108 @@ function TrackingUpdate({ token }) {
   );
 }
 
+
+// ── Inventory View ─────────────────────────────────────────────
+function InventoryView({ token }) {
+  const [sku,     setSku]     = useState('');
+  const [items,   setItems]   = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+  const [searched,setSearched]= useState(false);
+  const [total,   setTotal]   = useState(0);
+
+  const search = async (fetchAll = false) => {
+    setLoading(true); setError('');
+    try {
+      const params = new URLSearchParams();
+      if (sku.trim()) params.set('sku', sku.trim());
+      // ECCANG 全量
+      const eccangRes  = await fetch(`/api/warehouse/eccang/inventory?${params}`);
+      const eccangJson = await eccangRes.json();
+      // JDL 全量
+      const jdlRes  = await fetch(`/api/warehouse/jdl/inventory?${params}`);
+      const jdlJson = await jdlRes.json();
+
+      // 合并：按 SKU 分组
+      const skuMap = {};
+      (eccangJson.data || []).forEach(item => {
+        if (!skuMap[item.sku]) skuMap[item.sku] = { sku: item.sku, warehouses: {} };
+        skuMap[item.sku].warehouses['ECCANG'] = item;
+      });
+      (jdlJson.data || []).forEach(item => {
+        if (!skuMap[item.sku]) skuMap[item.sku] = { sku: item.sku, warehouses: {} };
+        skuMap[item.sku].warehouses[item.warehouse_code || 'JDL'] = item;
+      });
+
+      const combined = Object.values(skuMap);
+      setItems(combined);
+      setTotal(combined.length);
+      setSearched(true);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 20 }}>Inventory — All Warehouses</h2>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <input value={sku} onChange={e => setSku(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && search()}
+          placeholder="Search by SKU (leave blank for all)..."
+          style={{ flex: 1, padding: '10px 14px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 14, background: C.bg, color: C.text }} />
+        <button onClick={() => search()} style={{ background: C.accent, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+          {loading ? '...' : 'Search'}
+        </button>
+      </div>
+      {error && <div style={{ color: C.danger, fontSize: 13, marginBottom: 12 }}>⚠️ {error}</div>}
+      {searched && !loading && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
+            {total} SKUs across all warehouses
+          </div>
+          {items.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: C.muted, fontSize: 14 }}>No inventory found</div>
+          ) : (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: C.surfaceAlt }}>
+                  {['SKU', 'Warehouse', 'Sellable', 'Reserved', 'On-way'].map(h => (
+                    <th key={h} style={{ padding: '8px 14px', textAlign: 'left', color: C.muted, fontWeight: 600, fontSize: 11, letterSpacing: '0.04em', textTransform: 'uppercase', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {items.flatMap((item, i) => {
+                  const whEntries = Object.entries(item.warehouses);
+                  return whEntries.map(([wh, data], j) => {
+                    const isJDL = wh !== 'ECCANG';
+                    return (
+                      <tr key={`${i}-${j}`} style={{ borderBottom: `1px solid ${C.border}` }}>
+                        <td style={{ padding: '8px 14px', fontFamily: 'monospace', color: C.accent, fontWeight: 600, opacity: j === 0 ? 1 : 0.3 }}>
+                          {j === 0 ? item.sku : ''}
+                        </td>
+                        <td style={{ padding: '8px 14px' }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4, background: isJDL ? C.accentDim : '#F5F3FF', color: isJDL ? C.accent : '#7C3AED', border: `1px solid ${isJDL ? '#BFDBFE' : '#DDD6FE'}` }}>{wh}</span>
+                        </td>
+                        <td style={{ padding: '8px 14px', fontWeight: 700, color: data.sellable > 0 ? C.success : C.muted }}>{data.sellable || 0}</td>
+                        <td style={{ padding: '8px 14px', color: data.reserved > 0 ? C.warning : C.muted }}>{data.reserved || 0}</td>
+                        <td style={{ padding: '8px 14px', color: data.onway > 0 ? C.accent : C.muted }}>{data.onway || 0}</td>
+                      </tr>
+                    );
+                  });
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Order Search ───────────────────────────────────────────────
 function OrderSearch({ token }) {
   const [q,       setQ]       = useState('');
@@ -257,7 +359,7 @@ function OrderSearch({ token }) {
   const search = async () => {
     setLoading(true); setError(''); setSearched(true);
     try {
-      const params = new URLSearchParams({ pageSize: '50' });
+      const params = new URLSearchParams(q ? { pageSize: '50' } : { all: '1' });
       if (q) params.set('q', q);
       const res  = await fetch(`/api/orders/eccang?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -345,9 +447,10 @@ export default function AdminPage() {
   };
 
   const nav = [
-    { key: 'orders',   label: '📦 Orders' },
-    { key: 'upload',   label: '⬆️ Upload Orders' },
-    { key: 'tracking', label: '🚚 Update Tracking' },
+    { key: 'orders',    label: '📦 Orders' },
+    { key: 'inventory', label: '📊 Inventory' },
+    { key: 'upload',    label: '⬆️ Upload Orders' },
+    { key: 'tracking',  label: '🚚 Update Tracking' },
   ];
 
   return (
@@ -382,9 +485,10 @@ export default function AdminPage() {
 
         {/* Content */}
         <main style={{ flex: 1, padding: '32px 32px' }}>
-          {section === 'orders'   && <OrderSearch   token={token} />}
-          {section === 'upload'   && <OrderUpload   token={token} />}
-          {section === 'tracking' && <TrackingUpdate token={token} />}
+          {section === 'orders'    && <OrderSearch    token={token} />}
+          {section === 'inventory' && <InventoryView  token={token} />}
+          {section === 'upload'    && <OrderUpload    token={token} />}
+          {section === 'tracking'  && <TrackingUpdate token={token} />}
         </main>
       </div>
     </>
