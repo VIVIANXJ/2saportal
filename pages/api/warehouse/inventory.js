@@ -1,24 +1,25 @@
 /**
  * /api/warehouse/inventory
- * 直接调用两个仓库逻辑，不再用内部 fetch 转发
+ * 直接调用两个仓库，不做内部 fetch 转发
  */
 
-import { buildEccangRequest, parseEccangResponse } from './_warehouse_helpers';
+import crypto from 'crypto';
+import xml2js from 'xml2js';
 
-// 直接内联 ECCANG 调用逻辑
+// ── ECCANG ──────────────────────────────────────────────────
 async function fetchEccang(skuList) {
-  const ECCANG_BASE_URL = process.env.ECCANG_BASE_URL;
-  const APP_TOKEN       = process.env.ECCANG_APP_TOKEN;
-  const APP_KEY         = process.env.ECCANG_APP_KEY;
-  const WAREHOUSE_CODE  = process.env.ECCANG_WAREHOUSE_CODE || 'AUSYD';
+  const BASE_URL       = process.env.ECCANG_BASE_URL;
+  const APP_TOKEN      = process.env.ECCANG_APP_TOKEN;
+  const APP_KEY        = process.env.ECCANG_APP_KEY;
+  const WAREHOUSE_CODE = process.env.ECCANG_WAREHOUSE_CODE || 'AUSYD';
 
-  if (!ECCANG_BASE_URL || !APP_TOKEN || !APP_KEY) {
+  if (!BASE_URL || !APP_TOKEN || !APP_KEY) {
     return { error: 'ECCANG credentials not configured' };
   }
 
   const paramsJson = { page: 1, pageSize: '50', warehouse_code: WAREHOUSE_CODE };
-  if (skuList?.length === 1)  paramsJson.product_sku = skuList[0];
-  if (skuList?.length > 1)    paramsJson.product_sku_arr = skuList;
+  if (skuList?.length === 1) paramsJson.product_sku = skuList[0];
+  if (skuList?.length > 1)  paramsJson.product_sku_arr = skuList;
 
   const soap = `<?xml version="1.0" encoding="UTF-8"?>
 <SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://www.example.org/Ec/">
@@ -33,17 +34,18 @@ async function fetchEccang(skuList) {
 </SOAP-ENV:Envelope>`;
 
   try {
-    const res = await fetch(ECCANG_BASE_URL, {
+    const res = await fetch(BASE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/xml; charset=UTF-8', 'SOAPAction': '' },
       body: soap,
     });
     const xml = await res.text();
-
-    // Parse XML response
-    const responseMatch = xml.match(/<response>([\s\S]*?)<\/response>/);
-    if (!responseMatch) return { error: 'Invalid ECCANG response' };
-    const data = JSON.parse(responseMatch[1]);
+    const parser = new xml2js.Parser({ explicitArray: false, ignoreAttrs: true });
+    const result = await parser.parseStringPromise(xml);
+    const envelope = result['SOAP-ENV:Envelope'] || result['soapenv:Envelope'];
+    const body     = envelope['SOAP-ENV:Body']   || envelope['soapenv:Body'];
+    const response = body['ns1:callServiceResponse']?.response || body['callServiceResponse']?.response;
+    const data = JSON.parse(response);
 
     if (data.ask !== 'Success') return { error: data.message || 'ECCANG error' };
 
@@ -53,11 +55,11 @@ async function fetchEccang(skuList) {
       data: items.map(item => ({
         sku:        item.product_sku,
         warehouse:  'ECCANG',
-        sellable:   parseInt(item.sellable)  || 0,
-        reserved:   parseInt(item.reserved)  || 0,
-        onway:      parseInt(item.onway)     || 0,
-        unsellable: parseInt(item.unsellable)|| 0,
-        hold:       parseInt(item.hold)      || 0,
+        sellable:   parseInt(item.sellable)   || 0,
+        reserved:   parseInt(item.reserved)   || 0,
+        onway:      parseInt(item.onway)       || 0,
+        unsellable: parseInt(item.unsellable)  || 0,
+        hold:       parseInt(item.hold)        || 0,
       }))
     };
   } catch (e) {
@@ -65,38 +67,60 @@ async function fetchEccang(skuList) {
   }
 }
 
-// JDL 暂时返回空（token 待配置）
+// ── JDL ─────────────────────────────────────────────────────
 async function fetchJdl(skuList) {
+  const BASE_URL     = process.env.JDL_BASE_URL || 'https://intl-api.jdl.com';
+  const APP_KEY      = process.env.JDL_APP_KEY;
+  const APP_SECRET   = process.env.JDL_APP_SECRET;
   const ACCESS_TOKEN = process.env.JDL_ACCESS_TOKEN;
-  if (!ACCESS_TOKEN) return { error: 'JDL access_token not configured' };
 
-  const crypto = await import('crypto');
-  const APP_KEY    = process.env.JDL_APP_KEY;
-  const APP_SECRET = process.env.JDL_APP_SECRET;
-  const BASE_URL   = process.env.JDL_BASE_URL || 'https://api.jdl.com';
+  if (!ACCESS_TOKEN || !APP_KEY || !APP_SECRET) {
+    return { error: 'JDL credentials not configured' };
+  }
 
-  const timestamp = new Date(Date.now() + 8*3600*1000).toISOString().replace('T',' ').slice(0,19);
-  const urlParams = { app_key: APP_KEY, access_token: ACCESS_TOKEN, timestamp, v: '2.0' };
+  const timestamp = new Date(Date.now() + 8 * 3600 * 1000)
+    .toISOString().replace('T', ' ').slice(0, 19);
 
+  // body 参数
   const body = { pageNum: 1, pageSize: 50 };
   if (skuList?.length) body.customerGoodsIdList = skuList;
 
-  const content = APP_SECRET + Object.keys({...urlParams,...body}).sort().map(k=>k+({...urlParams,...body})[k]).join('') + APP_SECRET;
-  const sign = crypto.createHash('md5').update(content,'utf8').digest('hex').toUpperCase();
+  // 参与签名的参数：URL params + body params，但不含 LOP-DN
+  const signParams = {
+    app_key:      APP_KEY,
+    access_token: ACCESS_TOKEN,
+    timestamp,
+    v:            '2.0',
+    ...body,
+  };
 
+  const content = APP_SECRET
+    + Object.keys(signParams).sort().map(k => `${k}${signParams[k]}`).join('')
+    + APP_SECRET;
+  const sign = crypto.createHash('md5').update(content, 'utf8').digest('hex').toUpperCase();
+
+  // 构建 URL，LOP-DN 只加到 URL，不参与签名
   const url = new URL('/fop/open/stockprovider/querystockwarehouselistbypage', BASE_URL);
-  Object.entries({...urlParams, sign}).forEach(([k,v]) => url.searchParams.set(k,v));
+  url.searchParams.set('app_key',      APP_KEY);
+  url.searchParams.set('access_token', ACCESS_TOKEN);
+  url.searchParams.set('timestamp',    timestamp);
+  url.searchParams.set('v',            '2.0');
+  url.searchParams.set('sign',         sign);
+  url.searchParams.set('LOP-DN',       'FOP');
 
   try {
     const res = await fetch(url.toString(), {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body:    JSON.stringify(body),
     });
     const text = await res.text();
-    if (!res.ok) return { error: `JDL HTTP ${res.status}` };
+    if (!res.ok) return { error: `JDL HTTP ${res.status}: ${text.slice(0, 200)}` };
+
     const data = JSON.parse(text);
-    if (data.code !== 200 && data.code !== '200') return { error: data.message || 'JDL error' };
+    if (data.code !== 200 && data.code !== '200') {
+      return { error: data.message || `JDL code ${data.code}` };
+    }
 
     const records = data.data?.records || [];
     return {
@@ -104,11 +128,11 @@ async function fetchJdl(skuList) {
       data: records.map(item => ({
         sku:        item.customerGoodsId,
         warehouse:  'JDL',
-        sellable:   item.stockQuantity    || 0,
-        reserved:   item.preoccupiedQuantity || 0,
-        onway:      item.purchaseWaitinStockQuantity || 0,
-        unsellable: item.defectiveQty     || 0,
-        hold:       item.lockQty          || 0,
+        sellable:   item.stockQuantity               || 0,
+        reserved:   item.preoccupiedQuantity         || 0,
+        onway:      item.purchaseWaitinStockQuantity  || 0,
+        unsellable: item.defectiveQty                || 0,
+        hold:       item.lockQty                     || 0,
       }))
     };
   } catch (e) {
@@ -116,6 +140,7 @@ async function fetchJdl(skuList) {
   }
 }
 
+// ── Handler ──────────────────────────────────────────────────
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
@@ -130,25 +155,29 @@ export default async function handler(req, res) {
     queryEccang ? fetchEccang(skuList) : Promise.resolve(null),
   ]);
 
-  // Merge by SKU
+  // 按 SKU 合并
   const skuMap = {};
-  const process = (result, whName) => {
+  const merge = (result, whName) => {
     if (!result?.data) return;
     for (const item of result.data) {
       if (!item.sku) continue;
       if (!skuMap[item.sku]) skuMap[item.sku] = { sku: item.sku, warehouses: {} };
       skuMap[item.sku].warehouses[whName] = {
-        sellable: item.sellable, reserved: item.reserved,
-        onway: item.onway, unsellable: item.unsellable, hold: item.hold,
+        sellable:   item.sellable,
+        reserved:   item.reserved,
+        onway:      item.onway,
+        unsellable: item.unsellable,
+        hold:       item.hold,
       };
     }
   };
-  process(jdlResult,    'JDL');
-  process(eccangResult, 'ECCANG');
+  merge(jdlResult,    'JDL');
+  merge(eccangResult, 'ECCANG');
 
   const combined = Object.values(skuMap).map(entry => ({
     ...entry,
-    total_sellable: Object.values(entry.warehouses).reduce((s, w) => s + (w.sellable||0), 0),
+    total_sellable: Object.values(entry.warehouses)
+      .reduce((s, w) => s + (w.sellable || 0), 0),
   }));
 
   return res.status(200).json({
