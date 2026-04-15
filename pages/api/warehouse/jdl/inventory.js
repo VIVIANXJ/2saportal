@@ -138,7 +138,9 @@ export default async function handler(req, res) {
     // SDK: getAppJsonParams/getBodyObject 는 ReqDto 를 List 에 넣어 직렬화
     // → body 와 param_json 모두 [{...}] 배열 형식이어야 함
     const body = [bodyObj];
+    console.log('[JDL] body:', JSON.stringify(body));
     const raw = await callIfop(STOCK_PATH, body);
+    console.log('[JDL] raw response:', JSON.stringify(raw).slice(0, 500));
 
     // iFOP response: { code: 200, message: 'success', data: { records: [...], total, current, size } }
     if (raw.code !== 200 && raw.code !== '200') {
