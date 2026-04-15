@@ -47,7 +47,7 @@ async function callIfop(path, body = {}) {
 
   const url = new URL(path, BASE_URL);
   Object.entries({ ...urlParams, sign }).forEach(([k, v]) => url.searchParams.set(k, v));
-  url.searchParams.set('LOP-DN', 'FOP');  // iFOP 海外仓服务域
+  url.searchParams.set('LOP-DN', 'JD_FOP_FULFILLMENT_CENTE');  // iFOP 海外仓服务域
 
   const res = await fetch(url.toString(), {
     method:  'POST',
