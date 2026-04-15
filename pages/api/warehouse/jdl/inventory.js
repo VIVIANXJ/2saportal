@@ -32,9 +32,13 @@ function getTimestamp() {
 }
 
 /** JDL MD5 sign: appSecret + sorted(k+v) + appSecret → MD5 → UPPERCASE */
-function buildSign(params, secret) {
+function buildSign(appKey, accessToken, timestamp, secret) {
+  // JDL 固定顺序签名：不排序，参数名+参数值直接拼接
   const content = secret
-    + Object.keys(params).sort().map(k => `${k}${params[k]}`).join('')
+    + 'app_key'      + appKey
+    + 'access_token' + accessToken
+    + 'timestamp'    + timestamp
+    + 'v'            + '2.0'
     + secret;
   return crypto.createHash('md5').update(content, 'utf8').digest('hex').toUpperCase();
 }
@@ -43,7 +47,7 @@ function buildSign(params, secret) {
 async function callIfop(path, body = {}) {
   const timestamp = getTimestamp();
   const urlParams = { app_key: APP_KEY, access_token: ACCESS_TOKEN, timestamp, v: '2.0' };
-  const sign = buildSign({ ...urlParams, ...body }, APP_SECRET);
+  const sign = buildSign(APP_KEY, ACCESS_TOKEN, timestamp, APP_SECRET);
 
   const url = new URL(path, BASE_URL);
   Object.entries({ ...urlParams, sign }).forEach(([k, v]) => url.searchParams.set(k, v));
