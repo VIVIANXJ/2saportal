@@ -452,7 +452,7 @@ export default function Portal() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: C.surfaceAlt, borderBottom: `1px solid ${C.border}` }}>
-                      {['SKU', 'Total Sellable', 'JDL — Sellable', 'JDL — Reserved', 'ECCANG — Sellable', 'ECCANG — Reserved', 'ECCANG — On-way'].map(h => (
+                      {['SKU', 'Warehouse', 'Sellable', 'Reserved', 'On-way', 'Total'].map(h => (
                         <th key={h} style={{
                           padding: '10px 16px', textAlign: 'left',
                           color: C.muted, fontWeight: 600, fontSize: 11,
@@ -462,48 +462,74 @@ export default function Portal() {
                     </tr>
                   </thead>
                   <tbody>
-                    {inventory.map((item, i) => {
-                      const jdl = item.warehouses?.JDL;
-                      const ec  = item.warehouses?.ECCANG;
-                      return (
-                        <tr key={i} className="row-hover" style={{ borderBottom: `1px solid ${C.border}` }}>
-                          <td style={{ padding: '12px 16px', fontFamily: 'monospace', color: C.accent, fontWeight: 600, fontSize: 13 }}>{item.sku}</td>
-                          <td style={{ padding: '12px 16px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <span style={{ fontWeight: 700, color: C.text, fontSize: 15 }}>{item.total_sellable}</span>
-                              {item.total_sellable > 0 && (
-                                <StockBar
-                                  sellable={item.total_sellable}
-                                  reserved={(jdl?.reserved || 0) + (ec?.reserved || 0)}
-                                  onway={ec?.onway || 0}
-                                />
-                              )}
-                            </div>
-                          </td>
-                          <td style={{ padding: '12px 16px' }}>
-                            {jdl ? <span style={{ color: C.success, fontWeight: 600 }}>{jdl.sellable}</span> : <span style={{ color: C.border }}>—</span>}
-                          </td>
-                          <td style={{ padding: '12px 16px' }}>
-                            {jdl ? <span style={{ color: C.warning, fontWeight: 500 }}>{jdl.reserved}</span> : <span style={{ color: C.border }}>—</span>}
-                          </td>
-                          <td style={{ padding: '12px 16px' }}>
-                            {ec ? <span style={{ color: C.success, fontWeight: 600 }}>{ec.sellable}</span> : <span style={{ color: C.border }}>—</span>}
-                          </td>
-                          <td style={{ padding: '12px 16px' }}>
-                            {ec ? <span style={{ color: C.warning, fontWeight: 500 }}>{ec.reserved}</span> : <span style={{ color: C.border }}>—</span>}
-                          </td>
-                          <td style={{ padding: '12px 16px' }}>
-                            {ec ? <span style={{ color: C.accent, fontWeight: 500 }}>{ec.onway}</span> : <span style={{ color: C.border }}>—</span>}
-                          </td>
-                        </tr>
-                      );
-                    })}
+                    {(() => {
+                      // 把合并数据展开成扁平行：每个仓库一行
+                      const rows = [];
+                      inventory.forEach(item => {
+                        if (item.warehouses) {
+                          // 合并接口返回的格式
+                          Object.entries(item.warehouses).forEach(([whName, wh]) => {
+                            rows.push({
+                              sku:     item.sku,
+                              wh:      whName,
+                              wh_code: whName,
+                              s:       wh.sellable  || 0,
+                              r:       wh.reserved  || 0,
+                              o:       wh.onway      || 0,
+                              t:       (wh.sellable || 0) + (wh.reserved || 0),
+                            });
+                          });
+                        } else {
+                          // 扁平格式（直接从单仓接口来）
+                          rows.push({
+                            sku:     item.sku,
+                            wh:      item.warehouse_code || item.warehouse || '—',
+                            wh_code: item.warehouse,
+                            s:       item.sellable  || 0,
+                            r:       item.reserved  || 0,
+                            o:       item.onway      || 0,
+                            t:       (item.sellable || 0) + (item.reserved || 0),
+                          });
+                        }
+                      });
+
+                      // 按 SKU 分组显示，同 SKU 多行合并第一列
+                      let lastSku = null;
+                      return rows.map((row, i) => {
+                        const isFirst = row.sku !== lastSku;
+                        lastSku = row.sku;
+                        const isJDL = row.wh_code === 'JDL' || row.wh?.startsWith('SYD') || row.wh?.startsWith('MEL') || row.wh_code === 'JDL';
+                        const whColor = isJDL ? C.accent : '#7C3AED';
+                        return (
+                          <tr key={i} className="row-hover" style={{
+                            borderBottom: `1px solid ${C.border}`,
+                            borderTop: isFirst && i > 0 ? `2px solid ${C.border}` : 'none',
+                          }}>
+                            <td style={{ padding: '10px 16px', fontFamily: 'monospace', color: C.accent, fontWeight: 600, fontSize: 12, opacity: isFirst ? 1 : 0.3 }}>
+                              {isFirst ? row.sku : ''}
+                            </td>
+                            <td style={{ padding: '10px 16px' }}>
+                              <span style={{
+                                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 4,
+                                background: isJDL ? C.accentDim : '#F5F3FF',
+                                color: whColor,
+                                border: `1px solid ${isJDL ? '#BFDBFE' : '#DDD6FE'}`,
+                              }}>{row.wh}</span>
+                            </td>
+                            <td style={{ padding: '10px 16px', fontWeight: 600, color: row.s > 0 ? C.success : C.muted }}>{row.s}</td>
+                            <td style={{ padding: '10px 16px', color: row.r > 0 ? C.warning : C.muted }}>{row.r}</td>
+                            <td style={{ padding: '10px 16px', color: row.o > 0 ? C.accent : C.muted }}>{row.o}</td>
+                            <td style={{ padding: '10px 16px', fontWeight: 700, color: C.text }}>{row.t}</td>
+                          </tr>
+                        );
+                      });
+                    })()}
                   </tbody>
                 </table>
                 <div style={{ display: 'flex', gap: 16, padding: '12px 20px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
-                  <span><span style={{ color: C.success, fontWeight: 700 }}>■</span> Sellable</span>
-                  <span><span style={{ color: C.warning, fontWeight: 700 }}>■</span> Reserved</span>
-                  <span><span style={{ color: C.accent, fontWeight: 700 }}>■</span> On-way</span>
+                  <span><span style={{ color: C.success, fontWeight: 700 }}>■</span> Sellable 可用</span>
+                  <span><span style={{ color: C.warning, fontWeight: 700 }}>■</span> Reserved 预占</span>
+                  <span><span style={{ color: C.accent, fontWeight: 700 }}>■</span> On-way 待入库</span>
                 </div>
               </div>
             )}
