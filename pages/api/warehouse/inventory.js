@@ -1,169 +1,202 @@
 /**
- * /api/warehouse/jdl/inventory
- * JDL iFOP 海外仓配 — 仓库库存查询
- *
- * 接口: FopOpenStockProvider / queryStockWarehouseListByPage
- * 路径: /fop/open/stockprovider/querystockwarehouselistbypage
- *
- * 字段名来自官方 SDK: JD_FOP_FULFILLMENT_CENTE_8_3_20251212170410.jar
- *   Request:  customerGoodsIdList, warehouseCode, page, pageSize
- *   Response: customerGoodsId, stockQuantity, totalQuantity,
- *             operatorLockNum, inventoryLockNum,
- *             preoccupiedQuantity, purchaseWaitinStockQuantity
- *
- * GET /api/warehouse/jdl/inventory?sku=SKU001
- * GET /api/warehouse/jdl/inventory?sku=SKU001,SKU002
- * GET /api/warehouse/jdl/inventory         (all, paginated)
+ * /api/warehouse/inventory
+ * 直接调用两个仓库，不做内部 fetch 转发
  */
 
 import crypto from 'crypto';
+import xml2js from 'xml2js';
 
-const BASE_URL     = process.env.JDL_BASE_URL    || 'https://api.jdl.com';
-const APP_KEY      = process.env.JDL_APP_KEY;
-const APP_SECRET   = process.env.JDL_APP_SECRET;
-const ACCESS_TOKEN = process.env.JDL_ACCESS_TOKEN;
+// ── ECCANG ──────────────────────────────────────────────────
+async function fetchEccang(skuList) {
+  const BASE_URL       = process.env.ECCANG_BASE_URL;
+  const APP_TOKEN      = process.env.ECCANG_APP_TOKEN;
+  const APP_KEY        = process.env.ECCANG_APP_KEY;
+  const WAREHOUSE_CODE = process.env.ECCANG_WAREHOUSE_CODE || 'AUSYD';
 
-const STOCK_PATH = '/fop/open/stockprovider/querystockwarehouselistbypage';
+  if (!BASE_URL || !APP_TOKEN || !APP_KEY) {
+    return { error: 'ECCANG credentials not configured' };
+  }
 
-/** Timestamp in GMT+8 → "YYYY-MM-DD HH:mm:ss" */
-function getTimestamp() {
-  const t = new Date(Date.now() + 8 * 3600 * 1000);
-  return t.toISOString().replace('T', ' ').slice(0, 19);
+  const paramsJson = { page: 1, pageSize: '50', warehouse_code: WAREHOUSE_CODE };
+  if (skuList?.length === 1) paramsJson.product_sku = skuList[0];
+  if (skuList?.length > 1)  paramsJson.product_sku_arr = skuList;
+
+  const soap = `<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://www.example.org/Ec/">
+  <SOAP-ENV:Body>
+    <ns1:callService>
+      <paramsJson>${JSON.stringify(paramsJson)}</paramsJson>
+      <appToken>${APP_TOKEN}</appToken>
+      <appKey>${APP_KEY}</appKey>
+      <service>getProductInventory</service>
+    </ns1:callService>
+  </SOAP-ENV:Body>
+</SOAP-ENV:Envelope>`;
+
+  try {
+    const res = await fetch(BASE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/xml; charset=UTF-8', 'SOAPAction': '' },
+      body: soap,
+    });
+    const xml = await res.text();
+    const parser = new xml2js.Parser({ explicitArray: false, ignoreAttrs: true });
+    const result = await parser.parseStringPromise(xml);
+    const envelope = result['SOAP-ENV:Envelope'] || result['soapenv:Envelope'];
+    const body     = envelope['SOAP-ENV:Body']   || envelope['soapenv:Body'];
+    const response = body['ns1:callServiceResponse']?.response || body['callServiceResponse']?.response;
+    const data = JSON.parse(response);
+
+    if (data.ask !== 'Success') return { error: data.message || 'ECCANG error' };
+
+    const items = Array.isArray(data.data) ? data.data : (data.data ? [data.data] : []);
+    return {
+      success: true,
+      data: items.map(item => ({
+        sku:        item.product_sku,
+        warehouse:  'ECCANG',
+        sellable:   parseInt(item.sellable)   || 0,
+        reserved:   parseInt(item.reserved)   || 0,
+        onway:      parseInt(item.onway)       || 0,
+        unsellable: parseInt(item.unsellable)  || 0,
+        hold:       parseInt(item.hold)        || 0,
+      }))
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
 }
 
-/** JDL MD5 sign: appSecret + sorted(k+v) + appSecret → MD5 → UPPERCASE */
-function buildSign(appKey, accessToken, timestamp, secret, body) {
+// ── JDL ─────────────────────────────────────────────────────
+async function fetchJdl(skuList) {
+  const BASE_URL     = process.env.JDL_BASE_URL || 'https://intl-api.jdl.com';
+  const APP_KEY      = process.env.JDL_APP_KEY;
+  const APP_SECRET   = process.env.JDL_APP_SECRET;
+  const ACCESS_TOKEN = process.env.JDL_ACCESS_TOKEN;
+
+  if (!ACCESS_TOKEN || !APP_KEY || !APP_SECRET) {
+    return { error: 'JDL credentials not configured' };
+  }
+
+  const timestamp = new Date(Date.now() + 8 * 3600 * 1000)
+    .toISOString().replace('T', ' ').slice(0, 19);
+
+  // SDK: getAppJsonParams/getBodyObject 都是把 ReqDto 放入 List 后序列化
+  // 所以 body 和 param_json 都必须是数组 [{...}] 格式
+  const bodyObj = {
+    page:         1,
+    pageSize:     50,
+    customerCode: process.env.JDL_CUSTOMER_CODE || 'KH20000015945',
+  };
+  if (skuList?.length) bodyObj.customerGoodsIdList = skuList;
+  const body = [bodyObj]; // ← 必须用 [] 包裹
+
   // JDL 签名规则（来自 SDK OAuth2Template.sign 方法）：
-  // TreeMap 字母排序，包含 access_token, app_key, method, param_json(body JSON), timestamp, v
+  // 1. 用 TreeMap（字母排序）存所有参与签名的参数
+  // 2. content = appSecret + 所有 key+value（按字母序） + appSecret
+  // 参与签名的参数：access_token, app_key, method, param_json(body JSON), timestamp, v
   const METHOD = '/fop/open/stockprovider/querystockwarehouselistbypage';
+  const paramJson = JSON.stringify(body);
   const signMap = {
-    access_token: accessToken,
-    app_key:      appKey,
+    access_token: ACCESS_TOKEN,
+    app_key:      APP_KEY,
     method:       METHOD,
-    param_json:   JSON.stringify(body),
+    param_json:   paramJson,
     timestamp,
     v:            '2.0',
   };
-  const content = secret
+  const signContent = APP_SECRET
     + Object.keys(signMap).sort().map(k => k + signMap[k]).join('')
-    + secret;
-  return crypto.createHash('md5').update(content, 'utf8').digest('hex').toUpperCase();
-}
+    + APP_SECRET;
+  const sign = crypto.createHash('md5').update(signContent, 'utf8').digest('hex').toUpperCase();
 
-/** Signed POST to iFOP */
-async function callIfop(path, body = {}) {
-  const timestamp = getTimestamp();
-  const urlParams = { app_key: APP_KEY, access_token: ACCESS_TOKEN, timestamp, v: '2.0' };
-  const sign = buildSign(APP_KEY, ACCESS_TOKEN, timestamp, APP_SECRET, body);
-
-  const url = new URL(path, BASE_URL);
-  Object.entries({ ...urlParams, sign }).forEach(([k, v]) => url.searchParams.set(k, v));
-  url.searchParams.set('LOP-DN', 'JD_FOP_FULFILLMENT_CENTE');  // iFOP 海外仓服务域
-
-  const res = await fetch(url.toString(), {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
-  });
-
-  const text = await res.text();
-  if (!res.ok) throw new Error(`JDL HTTP ${res.status}: ${text.slice(0, 300)}`);
-  try { return JSON.parse(text); }
-  catch { throw new Error(`JDL non-JSON: ${text.slice(0, 300)}`); }
-}
-
-/**
- * Normalise SDK response fields → unified shape across both warehouses
- *
- * SDK OpenStockWarehouseRespDto fields:
- *   customerGoodsId        → SKU (商家商品ID)
- *   jdGoodsId              → JD internal goods ID
- *   goodsName              → product name
- *   warehouseCode/Name     → warehouse
- *   stockQuantity          → 可用库存 (available/sellable)
- *   totalQuantity          → 总库存
- *   preoccupiedQuantity    → 预占库存 (reserved/allocated)
- *   operatorLockNum        → 操作锁定
- *   inventoryLockNum       → 库存锁定
- *   purchaseWaitinStockQuantity → 待入库 (on-way inbound)
- */
-function normalise(item) {
-  return {
-    sku:            item.customerGoodsId || item.jdGoodsId,
-    jd_goods_id:    item.jdGoodsId,
-    product_name:   item.goodsName,
-    warehouse:      'JDL',
-    warehouse_code: item.warehouseCode,
-    warehouse_name: item.warehouseName,
-    sellable:       item.stockQuantity             || 0,   // 可用库存
-    total:          item.totalQuantity             || 0,   // 总库存
-    reserved:       item.preoccupiedQuantity       || 0,   // 预占
-    operator_lock:  item.operatorLockNum           || 0,   // 操作锁定
-    inventory_lock: item.inventoryLockNum          || 0,   // 库存锁定
-    onway:          item.purchaseWaitinStockQuantity || 0, // 待入库
-    total_available: item.stockQuantity            || 0,
-  };
-}
-
-export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  if (!ACCESS_TOKEN) {
-    return res.status(503).json({
-      error: 'JDL access_token not configured.',
-      hint:  'Set JDL_ACCESS_TOKEN in .env.local',
-    });
-  }
-  if (!APP_KEY || !APP_SECRET) {
-    return res.status(500).json({ error: 'JDL APP_KEY or APP_SECRET not configured.' });
-  }
+  // 构建 URL，LOP-DN 只加到 URL，不参与签名
+  const url = new URL('/fop/open/stockprovider/querystockwarehouselistbypage', BASE_URL);
+  url.searchParams.set('app_key',      APP_KEY);
+  url.searchParams.set('access_token', ACCESS_TOKEN);
+  url.searchParams.set('timestamp',    timestamp);
+  url.searchParams.set('v',            '2.0');
+  url.searchParams.set('sign',         sign);
+  url.searchParams.set('LOP-DN',       'JD_FOP_FULFILLMENT_CENTE');
 
   try {
-    const { sku, page = '1', pageSize = '50' } = req.query;
-
-    // Build request body using correct SDK field names
-    const bodyObj = {
-      page:         parseInt(page),
-      pageSize:     parseInt(pageSize),
-      customerCode: process.env.JDL_CUSTOMER_CODE || 'KH20000015945',
-    };
-
-    if (sku) {
-      const skuList = sku.split(',').map(s => s.trim()).filter(Boolean);
-      bodyObj.customerGoodsIdList = skuList;
-    }
-
-    // SDK: getAppJsonParams/getBodyObject 는 ReqDto 를 List 에 넣어 직렬화
-    // → body 와 param_json 모두 [{...}] 배열 형식이어야 함
-    const body = [bodyObj];
-    const raw = await callIfop(STOCK_PATH, body);
-
-    // iFOP response: { code: 200, message: 'success', data: { records: [...], total, current, size } }
-    if (raw.code !== 200 && raw.code !== '200') {
-      return res.status(400).json({
-        error:   raw.message || 'iFOP API error',
-        code:    raw.code,
-        raw,
-      });
-    }
-
-    const records    = raw.data?.records || raw.data?.data || [];
-    const recArray   = Array.isArray(records) ? records : (records ? [records] : []);
-    const normalised = recArray.map(normalise);
-
-    return res.status(200).json({
-      success:   true,
-      warehouse: 'JDL',
-      total:     raw.data?.total   || normalised.length,
-      page:      raw.data?.current || parseInt(page),
-      pageSize:  raw.data?.size    || parseInt(pageSize),
-      data:      normalised,
+    const res = await fetch(url.toString(), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
     });
+    const text = await res.text();
+    if (!res.ok) return { error: `JDL HTTP ${res.status}: ${text.slice(0, 200)}` };
 
-  } catch (err) {
-    console.error('[JDL iFOP inventory]', err);
-    return res.status(500).json({ error: err.message });
+    const data = JSON.parse(text);
+    if (data.code !== 200 && data.code !== '200') {
+      return { error: data.message || `JDL code ${data.code}` };
+    }
+
+    const records = data.data?.records || [];
+    return {
+      success: true,
+      data: records.map(item => ({
+        sku:        item.customerGoodsId,
+        warehouse:  'JDL',
+        sellable:   item.stockQuantity               || 0,
+        reserved:   item.preoccupiedQuantity         || 0,
+        onway:      item.purchaseWaitinStockQuantity  || 0,
+        unsellable: item.defectiveQty                || 0,
+        hold:       item.lockQty                     || 0,
+      }))
+    };
+  } catch (e) {
+    return { error: e.message };
   }
+}
+
+// ── Handler ──────────────────────────────────────────────────
+export default async function handler(req, res) {
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  const { sku, warehouse } = req.query;
+  const skuList = sku ? sku.split(',').map(s => s.trim()).filter(Boolean) : null;
+
+  const queryJdl    = !warehouse || warehouse.toUpperCase() === 'JDL';
+  const queryEccang = !warehouse || warehouse.toUpperCase() === 'ECCANG';
+
+  const [jdlResult, eccangResult] = await Promise.all([
+    queryJdl    ? fetchJdl(skuList)    : Promise.resolve(null),
+    queryEccang ? fetchEccang(skuList) : Promise.resolve(null),
+  ]);
+
+  // 按 SKU 合并
+  const skuMap = {};
+  const merge = (result, whName) => {
+    if (!result?.data) return;
+    for (const item of result.data) {
+      if (!item.sku) continue;
+      if (!skuMap[item.sku]) skuMap[item.sku] = { sku: item.sku, warehouses: {} };
+      skuMap[item.sku].warehouses[whName] = {
+        sellable:   item.sellable,
+        reserved:   item.reserved,
+        onway:      item.onway,
+        unsellable: item.unsellable,
+        hold:       item.hold,
+      };
+    }
+  };
+  merge(jdlResult,    'JDL');
+  merge(eccangResult, 'ECCANG');
+
+  const combined = Object.values(skuMap).map(entry => ({
+    ...entry,
+    total_sellable: Object.values(entry.warehouses)
+      .reduce((s, w) => s + (w.sellable || 0), 0),
+  }));
+
+  return res.status(200).json({
+    success: true,
+    data: combined,
+    warehouses: {
+      JDL:    jdlResult?.success    ? 'ok' : (jdlResult?.error    || 'not queried'),
+      ECCANG: eccangResult?.success ? 'ok' : (eccangResult?.error || 'not queried'),
+    },
+  });
 }
