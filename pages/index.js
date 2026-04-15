@@ -102,10 +102,10 @@ export default function Portal() {
     setError(null);
     try {
       if (tab === 'orders') {
-        const params = new URLSearchParams({ pageSize: '50' });
+        const params = new URLSearchParams(searchQ ? { pageSize: '50' } : { all: '1', pageSize: '50' });
         if (q) params.set('q', q);
         if (type !== 'all') params.set('type', type);
-        const res  = await fetch(`/api/orders?${params}`);
+        const res  = await fetch(`/api/orders/eccang?${params}`);
         const json = await res.json();
         if (!json.success) throw new Error(json.error);
         setOrders(json.data || []);
