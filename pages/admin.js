@@ -284,11 +284,11 @@ function InventoryView({ token }) {
   const [error,   setError]   = useState('');
   const [searched,setSearched]= useState(false);
   const [total,   setTotal]   = useState(0);
-  const [page,    setPage]    = useState(1);
+  const [invCurPage, setInvCurPage] = useState(1);
   const PAGE_SIZE = 100;
 
   const search = async (fetchAll = false) => {
-    setLoading(true); setError(''); setPage(1);
+    setLoading(true); setError(''); setInvCurPage(1);
     try {
       const params = new URLSearchParams();
       if (sku.trim()) params.set('sku', sku.trim());
@@ -351,7 +351,7 @@ function InventoryView({ token }) {
                 </tr>
               </thead>
               <tbody>
-                {items.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE).flatMap((item, i) => {
+                {items.slice((invCurPage-1)*PAGE_SIZE, invCurPage*PAGE_SIZE).flatMap((item, i) => {
                   const whEntries = Object.entries(item.warehouses);
                   return whEntries.map(([wh, data], j) => {
                     const isJDL = wh !== 'ECCANG';
@@ -372,7 +372,7 @@ function InventoryView({ token }) {
                 })}
               </tbody>
             </table>
-            <Pagination page={page} total={items.length} pageSize={PAGE_SIZE} onChange={setPage} />
+            <Pagination page={invCurPage} total={items.length} pageSize={PAGE_SIZE} onChange={setInvCurPage} />
           )}
         </div>
       )}
@@ -387,11 +387,11 @@ function OrderSearch({ token }) {
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState('');
   const [searched,setSearched]= useState(false);
-  const [page,    setPage]    = useState(1);
+  const [ordCurPage, setOrdCurPage] = useState(1);
   const PAGE_SIZE = 100;
 
   const search = async () => {
-    setLoading(true); setError(''); setSearched(true); setPage(1);
+    setLoading(true); setError(''); setSearched(true); setOrdCurPage(1);
     try {
       const params = new URLSearchParams(q ? { pageSize: '50' } : { all: '1' });
       if (q) params.set('q', q);
@@ -438,7 +438,7 @@ function OrderSearch({ token }) {
                 </tr>
               </thead>
               <tbody>
-                {orders.slice((page-1)*PAGE_SIZE, page*PAGE_SIZE).map((o, i) => (
+                {orders.slice((ordCurPage-1)*PAGE_SIZE, ordCurPage*PAGE_SIZE).map((o, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
                     <td style={{ padding: '10px 14px', color: C.accent, fontWeight: 600 }}>{o.order_number}</td>
                     <td style={{ padding: '10px 14px', color: C.muted, fontSize: 12 }}>{o.reference_no || '—'}</td>
@@ -453,7 +453,7 @@ function OrderSearch({ token }) {
                 ))}
               </tbody>
             </table>
-            <Pagination page={page} total={orders.length} pageSize={PAGE_SIZE} onChange={setPage} />
+            <Pagination page={ordCurPage} total={orders.length} pageSize={PAGE_SIZE} onChange={setOrdCurPage} />
           )}
         </div>
       )}
