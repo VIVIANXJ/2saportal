@@ -131,6 +131,12 @@ export default function Portal() {
   const [orderPage,   setOrderPage]   = useState(1);
   const [invPage,     setInvPage]     = useState(1);
   const PAGE_SIZE = 100;
+
+  // 筛选状态
+  const [invFilter,    setInvFilter]    = useState('all');   // 'all' | 'JDL' | 'ECCANG'
+  const [hideZero,     setHideZero]     = useState(false);
+  const [invSearch,    setInvSearch]    = useState('');
+  const [orderSearch,  setOrderSearch]  = useState('');
   const inputRef = useRef(null);
 
   const search = useCallback(async (q, type) => {
@@ -170,6 +176,7 @@ export default function Portal() {
     setTab(t); setOrders([]); setInventory([]);
     setSearched(false); setError(null); setSearchQ('');
     setOrderPage(1); setInvPage(1);
+    setInvFilter('all'); setHideZero(false); setInvSearch(''); setOrderSearch('');
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
@@ -318,17 +325,39 @@ export default function Portal() {
 
         {/* Warehouse status pills */}
         {tab === 'inventory' && searched && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            {Object.entries(warehouseStatus).map(([wh, status]) => (
-              <span key={wh} style={{
-                fontSize: 12, padding: '4px 10px', borderRadius: 20, fontWeight: 500,
-                background: status === 'ok' ? C.successBg : C.dangerBg,
-                color: status === 'ok' ? C.success : C.danger,
-                border: `1px solid ${status === 'ok' ? '#A7F3D0' : '#FECACA'}`,
-              }}>
-                {wh}: {status}
-              </span>
-            ))}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              {Object.entries(warehouseStatus).map(([wh, status]) => (
+                <span key={wh} style={{
+                  fontSize: 12, padding: '4px 10px', borderRadius: 20, fontWeight: 500,
+                  background: status === 'ok' ? C.successBg : C.dangerBg,
+                  color: status === 'ok' ? C.success : C.danger,
+                  border: `1px solid ${status === 'ok' ? '#A7F3D0' : '#FECACA'}`,
+                }}>
+                  {wh}: {status}
+                </span>
+              ))}
+            </div>
+            {/* 库存筛选栏 */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <input
+                value={invSearch}
+                onChange={e => { setInvSearch(e.target.value); setInvPage(1); }}
+                placeholder="Filter by SKU..."
+                style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, background: C.bg, color: C.text, width: 200 }}
+              />
+              {[['all','All Warehouses'],['ECCANG','ECCANG only'],['SYD-LG-2-AU','JDL SYD'],['MEL-SM-1-AU','JDL MEL']].map(([v,l]) => (
+                <button key={v} onClick={() => { setInvFilter(v); setInvPage(1); }} style={{
+                  padding: '7px 14px', borderRadius: 8, border: `1px solid ${invFilter===v ? C.accent : C.border}`,
+                  background: invFilter===v ? C.accentDim : C.surface, color: invFilter===v ? C.accentText : C.muted,
+                  fontWeight: invFilter===v ? 600 : 400, fontSize: 13, cursor: 'pointer',
+                }}>{l}</button>
+              ))}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: C.muted, cursor: 'pointer' }}>
+                <input type="checkbox" checked={hideZero} onChange={e => { setHideZero(e.target.checked); setInvPage(1); }} />
+                Hide zero stock
+              </label>
+            </div>
           </div>
         )}
 
@@ -347,7 +376,26 @@ export default function Portal() {
         {/* Orders table */}
         {tab === 'orders' && searched && !loading && (
           <div style={{ animation: 'fadeIn 0.2s ease' }}>
-            {orders.length === 0 ? (
+            {(() => {
+              const q = orderSearch.trim().toLowerCase();
+              const filteredOrders = q
+                ? orders.filter(o =>
+                    (o.order_number  || '').toLowerCase().includes(q) ||
+                    (o.reference_no  || '').toLowerCase().includes(q)
+                  )
+                : orders;
+              window._filteredOrders = filteredOrders; // expose for pagination
+              return null;
+            })()}
+            {(() => {
+              const q = orderSearch.trim().toLowerCase();
+              const filteredOrders = q
+                ? orders.filter(o =>
+                    (o.order_number  || '').toLowerCase().includes(q) ||
+                    (o.reference_no  || '').toLowerCase().includes(q)
+                  )
+                : orders;
+            return filteredOrders.length === 0 ? (
               <div style={{
                 textAlign: 'center', color: C.muted, padding: '64px 0',
                 background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`,
@@ -357,8 +405,16 @@ export default function Portal() {
               </div>
             ) : (
               <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
-                <div style={{ padding: '12px 20px', borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted, fontWeight: 500 }}>
-                  {orders.length} result{orders.length !== 1 ? 's' : ''} · Page {orderPage}/{Math.max(1,Math.ceil(orders.length/PAGE_SIZE))}
+                <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: C.muted, fontWeight: 500 }}>
+                    {filteredOrders.length} result{filteredOrders.length !== 1 ? 's' : ''} · Page {orderPage}/{Math.max(1,Math.ceil(filteredOrders.length/PAGE_SIZE))}
+                  </span>
+                  <input
+                    value={orderSearch}
+                    onChange={e => { setOrderSearch(e.target.value); setOrderPage(1); }}
+                    placeholder="Filter by order / reference..."
+                    style={{ padding: '5px 10px', borderRadius: 6, border: `1px solid ${C.border}`, fontSize: 12, background: C.bg, color: C.text, width: 220 }}
+                  />
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -373,7 +429,7 @@ export default function Portal() {
                     </tr>
                   </thead>
                   <tbody>
-                    {orders.slice((orderPage-1)*PAGE_SIZE, orderPage*PAGE_SIZE).map(order => (
+                    {filteredOrders.slice((orderPage-1)*PAGE_SIZE, orderPage*PAGE_SIZE).map(order => (
                       <>
                         <tr
                           key={order.id}
@@ -467,9 +523,9 @@ export default function Portal() {
                     ))}
                   </tbody>
                 </table>
-                <Pagination page={orderPage} total={orders.length} pageSize={PAGE_SIZE} onChange={setOrderPage} />
+                <Pagination page={orderPage} total={filteredOrders.length} pageSize={PAGE_SIZE} onChange={setOrderPage} />
               </div>
-            )}
+            )})()}
           </div>
         )}
 
@@ -487,7 +543,7 @@ export default function Portal() {
             ) : (
               <div style={{ background: C.surface, borderRadius: 12, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
                 <div style={{ padding: '12px 20px', borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted, fontWeight: 500 }}>
-                  {inventory.length} SKU{inventory.length !== 1 ? 's' : ''} · Page {invPage}/{Math.max(1,Math.ceil(inventory.length/PAGE_SIZE))}
+                  {inventory.length} SKU{inventory.length !== 1 ? 's' : ''} · showing {rows ? rows.length : 0} rows · Page {invPage}/{Math.max(1,Math.ceil((rows ? rows.length : inventory.length)/PAGE_SIZE))}
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                   <thead>
@@ -503,12 +559,22 @@ export default function Portal() {
                   </thead>
                   <tbody>
                     {(() => {
+                      // 筛选逻辑
+                      const qSku = invSearch.trim().toLowerCase();
+                      const filteredInv = inventory.filter(item => {
+                        if (qSku && !(item.sku || '').toLowerCase().includes(qSku)) return false;
+                        return true;
+                      });
+
                       // 把合并数据展开成扁平行：每个仓库一行
                       const rows = [];
-                      inventory.forEach(item => {
+                      filteredInv.forEach(item => {
                         if (item.warehouses) {
-                          // 合并接口返回的格式
                           Object.entries(item.warehouses).forEach(([whName, wh]) => {
+                            // 仓库筛选
+                            if (invFilter !== 'all' && whName !== invFilter) return;
+                            // 零库存筛选
+                            if (hideZero && (wh.sellable || 0) === 0 && (wh.reserved || 0) === 0 && (wh.onway || 0) === 0) return;
                             rows.push({
                               sku:     item.sku,
                               wh:      whName,
@@ -520,10 +586,12 @@ export default function Portal() {
                             });
                           });
                         } else {
-                          // 扁平格式（直接从单仓接口来）
+                          const whName = item.warehouse_code || item.warehouse || '—';
+                          if (invFilter !== 'all' && whName !== invFilter) return;
+                          if (hideZero && (item.sellable || 0) === 0 && (item.reserved || 0) === 0 && (item.onway || 0) === 0) return;
                           rows.push({
                             sku:     item.sku,
-                            wh:      item.warehouse_code || item.warehouse || '—',
+                            wh:      whName,
                             wh_code: item.warehouse,
                             s:       item.sellable  || 0,
                             r:       item.reserved  || 0,
@@ -535,6 +603,9 @@ export default function Portal() {
 
                       // 按 SKU 分组显示，同 SKU 多行合并第一列
                       let lastSku = null;
+                      // 更新 invPage 如果超出范围
+                      const totalInvPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+                      if (invPage > totalInvPages) { /* will auto-correct via pagination */ }
                       const pagedRows = rows.slice((invPage-1)*PAGE_SIZE, invPage*PAGE_SIZE);
                       return pagedRows.map((row, i) => {
                         const isFirst = row.sku !== lastSku;
@@ -567,6 +638,7 @@ export default function Portal() {
                     })()}
                   </tbody>
                 </table>
+                
                 <Pagination page={invPage} total={inventory.length} pageSize={PAGE_SIZE} onChange={setInvPage} />
                 <div style={{ display: 'flex', gap: 16, padding: '12px 20px', borderTop: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
                   <span><span style={{ color: C.success, fontWeight: 700 }}>■</span> Sellable 可用</span>
