@@ -124,16 +124,19 @@ export default async function handler(req, res) {
     const { sku, page = '1', pageSize = '50' } = req.query;
 
     // Build request body using correct SDK field names
-    const body = {
+    const bodyObj = {
       page:     parseInt(page),
       pageSize: parseInt(pageSize),
     };
 
     if (sku) {
       const skuList = sku.split(',').map(s => s.trim()).filter(Boolean);
-      body.customerGoodsIdList = skuList;  // correct field per SDK
+      bodyObj.customerGoodsIdList = skuList;  // correct field per SDK
     }
 
+    // SDK: getAppJsonParams/getBodyObject 는 ReqDto 를 List 에 넣어 직렬화
+    // → body 와 param_json 모두 [{...}] 배열 형식이어야 함
+    const body = [bodyObj];
     const raw = await callIfop(STOCK_PATH, body);
 
     // iFOP response: { code: 200, message: 'success', data: { records: [...], total, current, size } }
