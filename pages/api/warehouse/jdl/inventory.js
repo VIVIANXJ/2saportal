@@ -7,7 +7,7 @@ const ACCESS_TOKEN    = process.env.JDL_ACCESS_TOKEN;
 const CUSTOMER_CODE   = process.env.JDL_CUSTOMER_CODE   || 'KH20000015945';
 const OPERATOR_ACCT   = process.env.JDL_OPERATOR_ACCT   || 'g70capital';
 const SYSTEM_CODE     = process.env.JDL_SYSTEM_CODE     || '2satest';
-const WAREHOUSES      = ['SYD-LG-2-AU', 'MEL-SM-1-AU'];
+const WAREHOUSES      = ['C0000001174', 'C0000001901'];
 const STOCK_PATH       = '/fop/open/stockprovider/querystockwarehouselistbypage';
 const BATCH_STOCK_PATH = '/fop/open/stockprovider/querystockbatchwarehouselistbypage';
 
