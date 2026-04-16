@@ -113,7 +113,7 @@ async function fetchJdlWarehouse(skuList, warehouseCode) {
     page: 1, pageSize: 50,
     customerCode:    CUSTOMER_CODE,
     warehouseCode,
-    operatorAccount: process.env.JDL_OPERATOR_ACCT || 'g70capital',
+    operatorAccount: process.env.JDL_OPERATOR_ACCT || 'jdhk_ncwnsMgKPxSE',
     systemCode:      process.env.JDL_SYSTEM_CODE   || '2satest',
     systemType:      '10',
     cargoOwnerCode:  process.env.JDL_CARGO_OWNER_CODE || '',
