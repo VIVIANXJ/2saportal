@@ -382,6 +382,106 @@ function InventoryView({ token }) {
   );
 }
 
+
+// ── JDL Order Search ───────────────────────────────────────────
+function JdlOrderSearch({ token }) {
+  const [q,         setQ]         = useState('');
+  const [orders,    setOrders]    = useState([]);
+  const [loading,   setLoading]   = useState(false);
+  const [error,     setError]     = useState('');
+  const [searched,  setSearched]  = useState(false);
+  const [ordCurPage, setOrdCurPage] = useState(1);
+  const PAGE_SIZE = 100;
+
+  const search = async () => {
+    setLoading(true); setError(''); setSearched(true); setOrdCurPage(1);
+    try {
+      const params = new URLSearchParams(q.trim() ? { q: q.trim() } : { all: '1' });
+      const res  = await fetch(`/api/orders/jdl?${params}`);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || JSON.stringify(json.raw || {}));
+      setOrders(json.data || []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusColor = (s) => {
+    const n = String(s || '').toLowerCase();
+    if (n.includes('sign') || n.includes('完成') || n.includes('delivered')) return C.success;
+    if (n.includes('out') || n.includes('出库') || n.includes('shipped')) return C.accent;
+    if (n.includes('fail') || n.includes('失败') || n.includes('cancel')) return C.danger;
+    return C.warning;
+  };
+
+  return (
+    <div>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: C.text, marginBottom: 20 }}>JDL Outbound Orders</h2>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <input value={q} onChange={e => setQ(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && search()}
+          placeholder="Customer order no. / reference (blank = all)..."
+          style={{ flex: 1, padding: '10px 14px', border: `1px solid ${C.border}`, borderRadius: 8, fontSize: 14, background: C.bg, color: C.text }} />
+        <button onClick={search} style={{ background: C.accent, color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+          {loading ? '...' : 'Search'}
+        </button>
+      </div>
+      {error && (
+        <div style={{ background: C.dangerBg, border: `1px solid #FECACA`, borderRadius: 8, padding: '10px 14px', color: C.danger, fontSize: 13, marginBottom: 16 }}>
+          ⚠️ {error}
+        </div>
+      )}
+      {searched && !loading && (
+        <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 16px', borderBottom: `1px solid ${C.border}`, fontSize: 12, color: C.muted }}>
+            {orders.length} orders
+          </div>
+          {orders.length === 0 ? (
+            <div style={{ padding: '40px', textAlign: 'center', color: C.muted, fontSize: 14 }}>No JDL orders found</div>
+          ) : (
+            <>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <thead>
+                <tr style={{ background: C.surfaceAlt }}>
+                  {['JDL Bill Code', 'Customer Order No.', 'Warehouse', 'Status', 'Carrier', 'Tracking', 'Items', 'Outbound'].map(h => (
+                    <th key={h} style={{ padding: '8px 14px', textAlign: 'left', color: C.muted, fontWeight: 600, fontSize: 11, letterSpacing: '0.04em', textTransform: 'uppercase', borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {orders.slice((ordCurPage-1)*PAGE_SIZE, ordCurPage*PAGE_SIZE).map((o, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <td style={{ padding: '10px 14px', color: C.accent, fontWeight: 600, fontFamily: 'monospace', fontSize: 12 }}>{o.order_number || '—'}</td>
+                    <td style={{ padding: '10px 14px', color: C.muted, fontSize: 12 }}>{o.reference_no || '—'}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 12, color: C.muted }}>{o.warehouse || '—'}</td>
+                    <td style={{ padding: '10px 14px' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 12, background: `${statusColor(o.status)}22`, color: statusColor(o.status) }}>
+                        {o.status || '—'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 14px', fontSize: 12, color: C.muted }}>{o.carrier || '—'}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 12, fontFamily: 'monospace', color: C.muted }}>{o.tracking_number || '—'}</td>
+                    <td style={{ padding: '10px 14px', fontSize: 12, color: C.muted }}>
+                      {o.order_items?.map(it => `${it.sku}×${it.qty_actual||it.quantity}`).join(', ') || '—'}
+                    </td>
+                    <td style={{ padding: '10px 14px', fontSize: 12, color: C.muted }}>
+                      {o.outbound_at ? String(o.outbound_at).slice(0,10) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <Pagination page={ordCurPage} total={orders.length} pageSize={PAGE_SIZE} onChange={setOrdCurPage} />
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Order Search ───────────────────────────────────────────────
 function OrderSearch({ token }) {
   const [q,       setQ]       = useState('');
@@ -486,10 +586,11 @@ export default function AdminPage() {
   };
 
   const nav = [
-    { key: 'orders',    label: '📦 Orders' },
-    { key: 'inventory', label: '📊 Inventory' },
-    { key: 'upload',    label: '⬆️ Upload Orders' },
-    { key: 'tracking',  label: '🚚 Update Tracking' },
+    { key: 'orders',     label: '📦 ECCANG Orders' },
+    { key: 'jdl_orders', label: '🚢 JDL Orders' },
+    { key: 'inventory',  label: '📊 Inventory' },
+    { key: 'upload',     label: '⬆️ Upload Orders' },
+    { key: 'tracking',   label: '🚚 Update Tracking' },
   ];
 
   return (
@@ -524,10 +625,11 @@ export default function AdminPage() {
 
         {/* Content */}
         <main style={{ flex: 1, padding: '32px 32px' }}>
-          {section === 'orders'    && <OrderSearch    token={token} />}
-          {section === 'inventory' && <InventoryView  token={token} />}
-          {section === 'upload'    && <OrderUpload    token={token} />}
-          {section === 'tracking'  && <TrackingUpdate token={token} />}
+          {section === 'orders'     && <OrderSearch    token={token} />}
+          {section === 'jdl_orders' && <JdlOrderSearch token={token} />}
+          {section === 'inventory'  && <InventoryView  token={token} />}
+          {section === 'upload'     && <OrderUpload    token={token} />}
+          {section === 'tracking'   && <TrackingUpdate token={token} />}
         </main>
       </div>
     </>
