@@ -115,7 +115,7 @@ async function fetchJdlWarehouse(skuList, warehouseCode) {
     warehouseCode,
     operatorAccount: process.env.JDL_OPERATOR_ACCT || 'g70capital',
     systemCode:      process.env.JDL_SYSTEM_CODE   || '2satest',
-    systemType:      10,
+    systemType:      '10',
   };
   if (skuList?.length) baseBody.customerGoodsIdList = skuList;
 
@@ -136,6 +136,9 @@ async function fetchJdlWarehouse(skuList, warehouseCode) {
       skuMap[sku].onway    += item.onway    ?? item.purchaseWaitinStockQuantity  ?? 0;
     });
   };
+
+  console.log('[JDL inv.js] r1:', r1.status, r1.status==='fulfilled' ? JSON.stringify(r1.value).slice(0,300) : r1.reason?.message);
+  console.log('[JDL inv.js] r2:', r2.status, r2.status==='fulfilled' ? JSON.stringify(r2.value).slice(0,300) : r2.reason?.message);
 
   let hasData = false;
   if (r1.status === 'fulfilled' && (r1.value.code === 200 || r1.value.code === '200')) { addItems(r1.value.data?.records); hasData = true; }
