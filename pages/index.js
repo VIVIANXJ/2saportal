@@ -345,7 +345,7 @@ export default function Portal() {
                 placeholder="Filter by SKU..."
                 style={{ padding: '7px 12px', borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, background: C.bg, color: C.text, width: 200 }}
               />
-              {[['all','All Warehouses'],['ECCANG','ECCANG only'],['SYD-LG-2-AU','JDL SYD'],['MEL-SM-1-AU','JDL MEL']].map(([v,l]) => (
+              {[['all','All Warehouses'],['ECCANG','ECCANG only'],['C0000001174','JDL SYD'],['C0000001901','JDL MEL']].map(([v,l]) => (
                 <button key={v} onClick={() => { setInvFilter(v); setInvPage(1); }} style={{
                   padding: '7px 14px', borderRadius: 8, border: `1px solid ${invFilter===v ? C.accent : C.border}`,
                   background: invFilter===v ? C.accentDim : C.surface, color: invFilter===v ? C.accentText : C.muted,
