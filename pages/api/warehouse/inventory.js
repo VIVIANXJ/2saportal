@@ -68,7 +68,7 @@ async function fetchEccang(skuList) {
 }
 
 // ── JDL ─────────────────────────────────────────────────────
-const JDL_WAREHOUSES = ['SYD-LG-2-AU', 'MEL-SM-1-AU'];
+const JDL_WAREHOUSES = ['C0000001174', 'C0000001901'];
 
 const JDL_STOCK_PATH       = '/fop/open/stockprovider/querystockwarehouselistbypage';
 const JDL_BATCH_STOCK_PATH = '/fop/open/stockprovider/querystockbatchwarehouselistbypage';
