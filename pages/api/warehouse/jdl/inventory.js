@@ -58,7 +58,7 @@ async function queryWarehouse(warehouseCode, skuList) {
     warehouseCode,
     operatorAccount: OPERATOR_ACCT,
     systemCode:      SYSTEM_CODE,
-    systemType:      10,
+    systemType:      '10',
   };
   if (skuList?.length) baseBody.customerGoodsIdList = skuList;
 
@@ -81,6 +81,9 @@ async function queryWarehouse(warehouseCode, skuList) {
       skuMap[sku].total    += item.total    ?? item.totalQuantity                ?? 0;
     });
   };
+
+  console.log('[JDL] r1:', r1.status, r1.status==='fulfilled' ? JSON.stringify(r1.value).slice(0,200) : r1.reason?.message);
+  console.log('[JDL] r2:', r2.status, r2.status==='fulfilled' ? JSON.stringify(r2.value).slice(0,200) : r2.reason?.message);
 
   let hasData = false;
   if (r1.status === 'fulfilled' && (r1.value.code === 200 || r1.value.code === '200')) {
