@@ -116,6 +116,7 @@ async function fetchJdlWarehouse(skuList, warehouseCode) {
     operatorAccount: process.env.JDL_OPERATOR_ACCT || 'g70capital',
     systemCode:      process.env.JDL_SYSTEM_CODE   || '2satest',
     systemType:      '10',
+    cargoOwnerCode:  process.env.JDL_CARGO_OWNER_CODE || '',
   };
   if (skuList?.length) baseBody.customerGoodsIdList = skuList;
 
