@@ -59,6 +59,7 @@ async function queryWarehouse(warehouseCode, skuList) {
     operatorAccount: OPERATOR_ACCT,
     systemCode:      SYSTEM_CODE,
     systemType:      '10',
+    cargoOwnerCode:  process.env.JDL_CARGO_OWNER_CODE || '',
   };
   if (skuList?.length) baseBody.customerGoodsIdList = skuList;
 
